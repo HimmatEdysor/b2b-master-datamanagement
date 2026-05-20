@@ -1,0 +1,129 @@
+.logo-upload {
+    margin-top: 4px;
+}
+
+.logo-upload-label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: inherit;
+}
+
+.logo-upload-hint {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: var(--muted, #64748b);
+    line-height: 1.45;
+}
+
+.logo-upload-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+.logo-upload-current {
+    margin-bottom: 14px;
+}
+
+.logo-upload-current-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted, #64748b);
+    margin-bottom: 8px;
+}
+
+.logo-preview-frame {
+    aspect-ratio: var(--logo-aspect, 3 / 1);
+    max-width: 360px;
+    width: 100%;
+    background: repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafc 0% 50%) 50% / 16px 16px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-preview-frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.logo-crop-panel {
+    margin-top: 12px;
+}
+
+.logo-crop-title {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.logo-crop-container {
+    max-width: 100%;
+    max-height: 320px;
+    background: #0f172a;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.logo-crop-container .cropper-view-box,
+.logo-crop-container .cropper-face {
+    border-radius: 0;
+}
+
+.logo-crop-image {
+    display: block;
+    max-width: 100%;
+}
+
+.logo-crop-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.logo-preview-result {
+    margin-top: 14px;
+}
+
+.logo-upload-actions {
+    margin-top: 4px;
+}
+
+.logo-upload-error {
+    margin-top: 8px;
+}
+
+.logo-btn-remove {
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.logo-btn-remove:hover {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.admin-form .logo-upload-hint {
+    color: #64748b;
+}
+
+.admin-form .logo-upload-label {
+    font-weight: 600;
+    font-size: 13px;
+}
