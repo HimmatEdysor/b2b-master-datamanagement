@@ -101,6 +101,21 @@ class TenantResolverService
             'domains' => $tenant->relationLoaded('domains')
                 ? $tenant->domains->pluck('host')->values()->all()
                 : [],
+            'domains_detail' => $tenant->relationLoaded('domains')
+                ? $tenant->domains->map(function ($domain) use ($tenant) {
+                    $host = TenantUrl::normalizeHostForEnvironment($domain->host, $tenant->slug);
+
+                    return [
+                        'host' => $host,
+                        'type' => $domain->type,
+                        'is_primary' => (bool) $domain->is_primary,
+                        'url' => TenantUrl::urlForHost($host),
+                    ];
+                })->values()->all()
+                : [],
+            'primary_url' => TenantUrl::urlForTenant($tenant),
+            'default_platform_url' => TenantUrl::urlForHost(TenantUrl::baseDomain()),
+            'is_platform_default' => $tenant->slug === config('master.platform_default_slug', 'guaranteeadmit'),
             'migration' => [
                 'status' => $tenant->migration_status,
                 'last_at' => $tenant->last_migration_at?->toIso8601String(),

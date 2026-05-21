@@ -12,6 +12,11 @@ return [
 
     'tenant_base_domain_production' => env('TENANT_BASE_DOMAIN_PRODUCTION', 'guaranteeadmit.com'),
 
+    /*
+    | Slug for the default platform tenant (apex guaranteeadmit.com CRM).
+    */
+    'platform_default_slug' => env('PLATFORM_DEFAULT_TENANT_SLUG', 'guaranteeadmit'),
+
     'tenant_url_scheme' => env('TENANT_URL_SCHEME') ?: (
         env('APP_ENV') === 'local' ? 'http' : 'https'
     ),

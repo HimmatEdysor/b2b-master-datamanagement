@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SubscriptionPlanController;
 use App\Http\Controllers\Admin\SupportTicketController as AdminSupportTicketController;
 use App\Http\Controllers\Admin\TenantController;
+use App\Http\Controllers\Admin\TenantDomainController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\CompanyRegistrationController;
 use App\Http\Controllers\SupportTicketController;
@@ -61,6 +62,15 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('tenants/{tenant}/migrate-database', [TenantController::class, 'migrateDatabase'])
             ->middleware('permission:tenants.edit')
             ->name('tenants.migrate-database');
+        Route::post('tenants/{tenant}/domains', [TenantDomainController::class, 'store'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.domains.store');
+        Route::post('tenants/{tenant}/domains/{domain}/primary', [TenantDomainController::class, 'setPrimary'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.domains.primary');
+        Route::delete('tenants/{tenant}/domains/{domain}', [TenantDomainController::class, 'destroy'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.domains.destroy');
         Route::post('tenants/migrate-databases', [TenantController::class, 'migrateDatabases'])
             ->middleware('permission:tenants.edit')
             ->name('tenants.migrate-databases');

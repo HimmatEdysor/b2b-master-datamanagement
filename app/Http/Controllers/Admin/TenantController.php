@@ -8,8 +8,10 @@ use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\TenantDomain;
 use App\Services\TenantCrmMigrateService;
+use App\Services\TenantDomainService;
 use App\Services\TenantProvisionerService;
 use App\Services\TenantResolverService;
+use App\Support\TenantDomainHost;
 use App\Support\TenantSlug;
 use App\Support\TenantUrl;
 use Illuminate\Http\RedirectResponse;
@@ -26,6 +28,7 @@ class TenantController extends Controller
         protected TenantProvisionerService $provisioner,
         protected TenantResolverService $resolver,
         protected TenantCrmMigrateService $crmMigrate,
+        protected TenantDomainService $domainService,
     ) {}
 
     public function index(Request $request): View
@@ -178,6 +181,19 @@ class TenantController extends Controller
         }
 
         $tenant->update($payload);
+
+        if (! empty($validated['custom_domain'])) {
+            $host = Str::lower($validated['custom_domain']);
+            if (! $tenant->domains()->where('host', $host)->exists()) {
+                try {
+                    $this->domainService->addCustomDomain($tenant, $host);
+                } catch (\Illuminate\Validation\ValidationException) {
+                    return back()
+                        ->withInput()
+                        ->withErrors(['custom_domain' => 'Could not add custom domain. It may already be in use.']);
+                }
+            }
+        }
 
         return redirect()
             ->route('admin.tenants.show', $tenant)
@@ -377,7 +393,7 @@ class TenantController extends Controller
             'brand_name' => ['nullable', 'string', 'max:255'],
             ...$this->logoValidationRules(),
             'support_email' => ['nullable', 'email', 'max:255'],
-            'custom_domain' => ['nullable', 'string', 'max:255'],
+            'custom_domain' => ['nullable', 'string', 'max:255', 'regex:'.TenantDomainHost::CUSTOM_DOMAIN_REGEX],
             'registration_notes' => ['nullable', 'string', 'max:2000'],
             'approve_immediately' => ['nullable', 'boolean'],
             'with_data' => ['nullable', 'boolean'],
