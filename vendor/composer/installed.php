@@ -3,7 +3,7 @@
         'name' => 'gateway/b2b-crm-master-portal',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '52f739790d84f284504d5e57ea7f38573c089619',
+        'reference' => '3ba0acf0adb0a18b8382637497753126ed71ddf3',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -160,7 +160,7 @@
         'gateway/b2b-crm-master-portal' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '52f739790d84f284504d5e57ea7f38573c089619',
+            'reference' => '3ba0acf0adb0a18b8382637497753126ed71ddf3',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -902,8 +902,8 @@
             'dev_requirement' => false,
             'provided' => array(
                 0 => '1.0 || 2.0 || 3.0',
-                1 => '1.0|2.0|3.0',
-                2 => '3.0.0',
+                1 => '3.0.0',
+                2 => '1.0|2.0|3.0',
             ),
         ),
         'psr/simple-cache' => array(
