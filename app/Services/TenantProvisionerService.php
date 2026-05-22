@@ -510,28 +510,25 @@ class TenantProvisionerService
         $host = TenantDbAdmin::host();
         $port = TenantDbAdmin::port();
         $user = TenantDbAdmin::username();
-        $passArgs = TenantDbAdmin::mysqlPasswordArgs();
+        $mysqlEnv = TenantDbAdmin::mysqlCliEnv();
 
         $timeout = (float) config('master.tenant_db_clone_timeout', 600);
 
-        $create = Process::timeout($timeout)->run([
-            'mysql', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
-            '-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
-        ]);
+        $create = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->run([
+                ...TenantDbAdmin::mysqlCommand('-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"),
+            ]);
 
         if (! $create->successful()) {
             throw new \RuntimeException(trim($create->errorOutput() ?: 'CREATE DATABASE failed'));
         }
 
-        $dump = Process::timeout($timeout)->run([
-            'mysqldump',
-            '-h', $host,
-            '-P', (string) $port,
-            '-u', $user,
-            ...$passArgs,
-            ...TenantDbAdmin::mysqldumpFlags(schemaOnly: true),
-            $from,
-        ]);
+        $dumpCommand = TenantDbAdmin::mysqldumpCommand($from, schemaOnly: true);
+
+        $dump = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->run($dumpCommand);
 
         if (! $dump->successful()) {
             $err = TenantDbAdmin::normalizeMysqldumpError(
@@ -541,14 +538,24 @@ class TenantProvisionerService
                 $err .= ' Increase TENANT_DB_CLONE_TIMEOUT in .env (default 3000 seconds).';
             }
 
+            $this->activityLog->database(
+                'clone_database',
+                'failed',
+                $err,
+                $tenant,
+                null,
+                ['command' => implode(' ', $dumpCommand), 'from' => $from, 'to' => $to]
+            );
+
             throw new \RuntimeException($err !== '' ? $err : 'mysqldump failed');
         }
 
-        $import = Process::timeout($timeout)->input($dump->output())->run([
-            'mysql', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
-            '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0;',
-            $to,
-        ]);
+        $import = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->input($dump->output())
+            ->run([
+                ...TenantDbAdmin::mysqlCommand('--init-command=SET SESSION FOREIGN_KEY_CHECKS=0;', $to),
+            ]);
 
         if (! $import->successful()) {
             $this->activityLog->database(

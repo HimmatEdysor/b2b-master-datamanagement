@@ -24,11 +24,12 @@ class TenantDbAdminTest extends TestCase
     }
 
     #[Test]
-    public function mysql_password_args_includes_password_flag_when_set(): void
+    public function mysql_cli_env_includes_password_when_set(): void
     {
         config(['master.tenant_db_password' => 'secret']);
 
-        $this->assertSame(['-psecret'], TenantDbAdmin::mysqlPasswordArgs());
+        $this->assertSame(['MYSQL_PWD' => 'secret'], TenantDbAdmin::mysqlCliEnv());
+        $this->assertSame([], TenantDbAdmin::mysqlPasswordArgs());
     }
 
     #[Test]
@@ -48,8 +49,9 @@ class TenantDbAdminTest extends TestCase
     {
         $flags = TenantDbAdmin::mysqldumpFlags(schemaOnly: true);
 
-        $this->assertContains('--single-transaction', $flags);
         $this->assertContains('--skip-lock-tables', $flags);
+        $this->assertContains('--single-transaction', $flags);
+        $this->assertContains('--set-gtid-purged=OFF', $flags);
         $this->assertContains('--no-tablespaces', $flags);
         $this->assertContains('--no-data', $flags);
     }

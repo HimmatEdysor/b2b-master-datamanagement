@@ -31,13 +31,23 @@ class TenantDbAdmin
     }
 
     /**
+     * Prefer MYSQL_PWD in {@see mysqlCliEnv()} for mysqldump/mysql CLI (avoids password warning on stderr).
+     *
      * @return list<string>
      */
     public static function mysqlPasswordArgs(): array
     {
+        return [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function mysqlCliEnv(): array
+    {
         $pass = self::password();
 
-        return $pass !== '' ? ['-p'.$pass] : [];
+        return $pass !== '' ? ['MYSQL_PWD' => $pass] : [];
     }
 
     /**
@@ -72,9 +82,10 @@ class TenantDbAdmin
     public static function mysqldumpFlags(bool $schemaOnly = true): array
     {
         $flags = [
-            '--single-transaction',
             '--skip-lock-tables',
+            '--single-transaction',
             '--no-tablespaces',
+            '--set-gtid-purged=OFF',
             '--skip-routines',
             '--skip-triggers',
         ];
@@ -86,14 +97,43 @@ class TenantDbAdmin
         return $flags;
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function mysqldumpCommand(string $database, bool $schemaOnly = true): array
+    {
+        return [
+            'mysqldump',
+            '-h', self::host(),
+            '-P', (string) self::port(),
+            '-u', self::username(),
+            ...self::mysqldumpFlags($schemaOnly),
+            $database,
+        ];
+    }
+
+    public static function mysqlCommand(string ...$args): array
+    {
+        return array_merge(
+            [
+                'mysql',
+                '-h', self::host(),
+                '-P', (string) self::port(),
+                '-u', self::username(),
+            ],
+            $args
+        );
+    }
+
     public static function normalizeMysqldumpError(string $error): string
     {
         if (str_contains($error, 'FLUSH TABLES')
             || str_contains($error, 'FLUSH_TABLES')
             || str_contains($error, 'RELOAD')
             || str_contains($error, '1227')) {
-            return 'Schema clone failed: RDS does not allow FLUSH TABLES. '
-                .'The app now uses --skip-lock-tables; restart Horizon (php artisan horizon:terminate) and retry provisioning.';
+            return 'Schema clone failed (RDS): mysqldump tried FLUSH TABLES, which is not allowed. '
+                .'Deploy the latest master code (uses --skip-lock-tables --no-tablespaces), run '
+                .'`php artisan horizon:terminate`, then retry. Cannot be fixed with GRANT RELOAD on RDS.';
         }
 
         return $error;

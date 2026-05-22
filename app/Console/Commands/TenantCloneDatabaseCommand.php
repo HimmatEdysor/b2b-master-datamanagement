@@ -32,20 +32,17 @@ class TenantCloneDatabaseCommand extends Command
         $host = TenantDbAdmin::host();
         $port = TenantDbAdmin::port();
         $user = TenantDbAdmin::username();
-        $passArgs = TenantDbAdmin::mysqlPasswordArgs();
+        $mysqlEnv = TenantDbAdmin::mysqlCliEnv();
 
         $timeout = (float) config('master.tenant_db_clone_timeout', 600);
         $this->info("Cloning [{$from}] → [{$to}] (schema only, timeout {$timeout}s) …");
         $this->line('Row data: run <info>php artisan tenants:seed-reference-data '.$tenant->slug.'</info> for tables in config/master.php → tenant_seed_tables');
 
-        $create = Process::timeout($timeout)->run([
-            'mysql',
-            '-h', $host,
-            '-P', (string) $port,
-            '-u', $user,
-            ...$passArgs,
-            '-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
-        ]);
+        $create = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->run([
+                ...TenantDbAdmin::mysqlCommand('-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"),
+            ]);
 
         if (! $create->successful()) {
             $this->error($create->errorOutput());
@@ -53,15 +50,9 @@ class TenantCloneDatabaseCommand extends Command
             return self::FAILURE;
         }
 
-        $dump = Process::timeout($timeout)->run([
-            'mysqldump',
-            '-h', $host,
-            '-P', (string) $port,
-            '-u', $user,
-            ...$passArgs,
-            ...TenantDbAdmin::mysqldumpFlags(schemaOnly: true),
-            $from,
-        ]);
+        $dump = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->run(TenantDbAdmin::mysqldumpCommand($from, schemaOnly: true));
 
         if (! $dump->successful()) {
             $this->error(TenantDbAdmin::normalizeMysqldumpError(
@@ -71,14 +62,10 @@ class TenantCloneDatabaseCommand extends Command
             return self::FAILURE;
         }
 
-        $import = Process::timeout($timeout)->input($dump->output())->run([
-            'mysql',
-            '-h', $host,
-            '-P', (string) $port,
-            '-u', $user,
-            ...$passArgs,
-            $to,
-        ]);
+        $import = Process::timeout($timeout)
+            ->env($mysqlEnv)
+            ->input($dump->output())
+            ->run(TenantDbAdmin::mysqlCommand($to));
 
         if (! $import->successful()) {
             $this->error($import->errorOutput());
