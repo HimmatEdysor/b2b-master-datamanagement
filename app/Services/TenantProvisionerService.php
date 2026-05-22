@@ -25,6 +25,7 @@ class TenantProvisionerService
         protected TenantSubscriptionService $subscriptions,
         protected ProvisionTenantQueueService $provisionQueue,
         protected TenantDatabaseSchemaCloneService $schemaClone,
+        protected TenantDbAdminCapabilityService $dbCapabilities,
     ) {}
 
     /**
@@ -123,10 +124,14 @@ class TenantProvisionerService
         $pdo = $this->pdoForSchemaInspection($tenant);
 
         if ($pdo === null) {
+            $audit = $this->dbCapabilities->audit();
+            $failed = collect($audit['checks'])->first(fn (array $c) => ! $c['ok']);
+            $detail = is_array($failed) ? ($failed['detail'] ?? '') : '';
+
             return [
                 'clone_done' => $this->inferCloneDoneFromStage($tenant),
-                'admin_db_error' => 'Cannot connect with TENANT_DB_* credentials. '
-                    .'Set the RDS master user in .env (TENANT_DB_USERNAME / TENANT_DB_PASSWORD) or Admin → Settings.',
+                'admin_db_error' => trim($audit['summary'].' '.$detail)
+                    .' Run `php artisan tenant:db-admin-check` on the server.',
             ];
         }
 
@@ -257,6 +262,8 @@ class TenantProvisionerService
             throw new \InvalidArgumentException('This company cannot be provisioned.');
         }
 
+        $this->dbCapabilities->assertReadyForProvisioning();
+
         $this->provisionQueue->dispatchProvisioning(
             $tenant->id,
             $by?->id,
@@ -323,6 +330,8 @@ class TenantProvisionerService
         if (! $this->canApprove($tenant)) {
             throw new \InvalidArgumentException('This company cannot be provisioned (use Suspend/Reactivate for other status changes).');
         }
+
+        $this->dbCapabilities->assertReadyForProvisioning();
 
         $resume = $this->canResumeAfterClone($tenant)
             || $tenant->status === 'provisioning'

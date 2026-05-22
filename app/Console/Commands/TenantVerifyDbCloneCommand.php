@@ -26,14 +26,20 @@ class TenantVerifyDbCloneCommand extends Command
         $this->line('User: '.TenantDbAdmin::username());
         $this->newLine();
 
-        try {
-            TenantDbAdmin::adminPdo();
-            $this->info('Admin PDO connection: OK');
-        } catch (\PDOException $e) {
-            $this->error(TenantDbAdmin::connectionErrorMessage($e));
+        $capabilityAudit = app(\App\Services\TenantDbAdminCapabilityService::class)->audit();
+        foreach ($capabilityAudit['checks'] as $check) {
+            $this->line(($check['ok'] ? '✓' : '✗').' '.$check['name'].': '.$check['detail']);
+        }
+
+        if (! $capabilityAudit['ok']) {
+            $this->newLine();
+            $this->error($capabilityAudit['summary']);
+            $this->line('Run: php artisan tenant:db-admin-check');
 
             return self::FAILURE;
         }
+
+        $this->info('Admin connection & privileges: OK');
 
         try {
             $inspect = $schemaClone->inspectTemplate($database);
