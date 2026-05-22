@@ -58,6 +58,23 @@ return [
     'tenant_db_clone_method' => env('TENANT_DB_CLONE_METHOD', 'pdo'),
 
     /*
+    | After CREATE DATABASE for a new tenant, GRANT ALL on that DB to TENANT_DB_USERNAME (@ hosts below).
+    | Use when b2b_master can CREATE DATABASE but needs per-DB grants (common on RDS).
+    */
+    'tenant_db_grant_admin_on_create' => filter_var(
+        env('TENANT_DB_GRANT_ADMIN_ON_CREATE', true),
+        FILTER_VALIDATE_BOOL
+    ),
+
+    /*
+    | Hosts for GRANT … TO 'TENANT_DB_USERNAME'@host after each tenant database is created.
+    */
+    'tenant_db_admin_grant_hosts' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_ADMIN_GRANT_HOSTS', '%'))
+    ))),
+
+    /*
     | Seconds for mysqldump/mysql when cloning template → tenant DB (Horizon timeout uses this too).
     | PDO clone ignores mysqldump; timeout still applies to queued provision jobs.
     */

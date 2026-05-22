@@ -609,7 +609,7 @@ class TenantProvisionerService
     protected function cloneDatabaseWithPdo(Tenant $tenant, string $from, string $to): void
     {
         try {
-            $stats = $this->schemaClone->cloneSchema($from, $to);
+            $stats = $this->schemaClone->provisionTenantDatabase($from, $to);
         } catch (\Throwable $e) {
             $this->activityLog->database(
                 'clone_database',
@@ -623,10 +623,24 @@ class TenantProvisionerService
             throw new \RuntimeException($e->getMessage(), 0, $e);
         }
 
+        $adminUser = TenantDbAdmin::username();
+        $grantNote = ($stats['admin_granted'] ?? false)
+            ? "Granted `{$adminUser}` on `{$to}`"
+            : 'Skipped admin GRANT (tenant_db_grant_admin_on_create=false)';
+
+        $this->activityLog->database(
+            'create_tenant_database',
+            'ok',
+            "Created database `{$to}`; {$grantNote}",
+            $tenant,
+            null,
+            ['method' => 'pdo', 'to' => $to, 'admin' => $adminUser]
+        );
+
         $this->activityLog->database(
             'clone_database',
             'ok',
-            "Cloned schema from {$from} to {$to} (PDO, no mysqldump)",
+            "Cloned schema from {$from} to {$to} (PDO: create → grant → tables)",
             $tenant,
             null,
             ['method' => 'pdo', 'from' => $from, 'to' => $to, ...$stats]
@@ -638,15 +652,27 @@ class TenantProvisionerService
         $mysqlEnv = TenantDbAdmin::mysqlCliEnv();
         $timeout = (float) config('master.tenant_db_clone_timeout', 600);
 
-        $create = Process::timeout($timeout)
-            ->env($mysqlEnv)
-            ->run([
-                ...TenantDbAdmin::mysqlCommand('-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"),
-            ]);
+        $pdo = TenantDbAdmin::adminPdo();
+        TenantDbAdmin::createTenantDatabase($pdo, $to);
 
-        if (! $create->successful()) {
-            throw new \RuntimeException(trim($create->errorOutput() ?: 'CREATE DATABASE failed'));
+        try {
+            TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $to);
+        } catch (\PDOException $e) {
+            throw new \RuntimeException(
+                "Created [{$to}] but GRANT for `".TenantDbAdmin::username().'` failed: '.$e->getMessage(),
+                0,
+                $e
+            );
         }
+
+        $this->activityLog->database(
+            'create_tenant_database',
+            'ok',
+            'Created `'.$to.'` and granted `'.TenantDbAdmin::username().'`',
+            $tenant,
+            null,
+            ['method' => 'mysqldump', 'to' => $to]
+        );
 
         $dumpCommand = TenantDbAdmin::mysqldumpCommand($from, schemaOnly: true);
 

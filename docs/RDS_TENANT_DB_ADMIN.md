@@ -1,10 +1,26 @@
 # RDS tenant provisioning user (`TENANT_DB_*`)
 
-The master app uses **one MySQL admin account** (not `root` on RDS) to:
+The master app uses **one MySQL admin account** (`b2b_master` / `TENANT_DB_*`) to provision each company.
 
-1. Clone schema from the template database into `b2b_tenant_*` databases
-2. `CREATE USER` for each tenant’s dedicated CRM database user
-3. `GRANT` on each new tenant database
+## Provisioning order (per company)
+
+1. **Company created** — `database_name` reserved on the tenant row (e.g. `b2b_tenant_chhota_don`).
+2. **CREATE DATABASE** — empty tenant database on RDS.
+3. **GRANT** — `ALL` on that database to `TENANT_DB_USERNAME` (`b2b_master`@`%`) so the admin user can create tables.
+4. **Clone schema** — copy table structure from the template DB (`b2b_live_database` / B2C CRM template); no full data dump.
+5. **Seed** — copy configured reference tables from template.
+6. **CREATE USER** — dedicated MySQL user for that tenant’s CRM only.
+7. **CRM admin** — default login in tenant DB.
+
+You need access to:
+
+| Database | Why |
+|----------|-----|
+| Template (e.g. `b2b_live_database`) | `SELECT` + `SHOW CREATE TABLE` to clone schema |
+| New `b2b_tenant_*` | `CREATE` tables after DB is created |
+| Master app DB | Laravel `.env` `DB_*` only (separate from `TENANT_DB_*`) |
+
+`b2b_master` does **not** need access to the master Laravel database for provisioning.
 
 Configure in **`.env`** or **Admin → Settings → Tenant database**:
 

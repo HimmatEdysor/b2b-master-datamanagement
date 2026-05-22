@@ -151,6 +151,69 @@ class TenantDbAdmin
     }
 
     /**
+     * @return list<string>
+     */
+    public static function adminGrantHosts(): array
+    {
+        $hosts = config('master.tenant_db_admin_grant_hosts', ['%']);
+
+        $hosts = array_values(array_unique(array_filter(
+            is_array($hosts) ? $hosts : [$hosts],
+            fn ($h) => is_string($h) && $h !== ''
+        )));
+
+        return $hosts !== [] ? $hosts : ['%'];
+    }
+
+    public static function shouldGrantAdminOnCreate(): bool
+    {
+        return (bool) config('master.tenant_db_grant_admin_on_create', true);
+    }
+
+    /**
+     * Step 2 of provisioning: ensure TENANT_DB_USERNAME can use the new tenant database.
+     */
+    public static function grantAdminOnTenantDatabase(PDO $pdo, string $databaseName): void
+    {
+        if (! self::shouldGrantAdminOnCreate()) {
+            return;
+        }
+
+        $user = str_replace("'", "''", self::username());
+        $quotedDb = self::quoteIdentifier($databaseName);
+
+        foreach (self::adminGrantHosts() as $host) {
+            $escapedHost = str_replace("'", "''", $host);
+            $pdo->exec(
+                "GRANT ALL PRIVILEGES ON {$quotedDb}.* TO '{$user}'@'{$escapedHost}'"
+            );
+        }
+
+        self::flushPrivilegesIfAllowed($pdo);
+    }
+
+    public static function createTenantDatabase(PDO $pdo, string $databaseName): void
+    {
+        $quoted = self::quoteIdentifier($databaseName);
+        $pdo->exec(
+            "CREATE DATABASE IF NOT EXISTS {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        );
+    }
+
+    protected static function flushPrivilegesIfAllowed(PDO $pdo): void
+    {
+        try {
+            $pdo->exec('FLUSH PRIVILEGES');
+        } catch (PDOException $e) {
+            if (str_contains($e->getMessage(), '1227') || str_contains($e->getMessage(), 'RELOAD')) {
+                return;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * mysqldump flags safe for AWS RDS (no FLUSH TABLES / RELOAD privileges).
      *
      * @return list<string>

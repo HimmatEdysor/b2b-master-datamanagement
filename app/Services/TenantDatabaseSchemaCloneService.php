@@ -6,7 +6,7 @@ use App\Support\TenantDbAdmin;
 use PDO;
 
 /**
- * Clone MySQL schema without mysqldump (safe on AWS RDS — no RELOAD / FLUSH TABLES).
+ * Provision tenant DB: (1) CREATE DATABASE → (2) GRANT admin on DB → (3) clone schema from template.
  */
 class TenantDatabaseSchemaCloneService
 {
@@ -16,11 +16,11 @@ class TenantDatabaseSchemaCloneService
     }
 
     /**
-     * Copy table + view definitions from template DB into tenant DB (no row data).
+     * Full provision: empty tenant database, grant b2b_master (TENANT_DB_*), copy schema from template.
      *
-     * @return array{tables: int, views: int, method: string}
+     * @return array{tables: int, views: int, method: string, database_created: bool, admin_granted: bool}
      */
-    public function cloneSchema(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
+    public function provisionTenantDatabase(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
     {
         $pdo = $pdo ?? $this->adminPdo();
 
@@ -30,14 +30,50 @@ class TenantDatabaseSchemaCloneService
             );
         }
 
-        $to = TenantDbAdmin::quoteIdentifier($toDatabase);
+        TenantDbAdmin::createTenantDatabase($pdo, $toDatabase);
 
-        $pdo->exec("CREATE DATABASE IF NOT EXISTS {$to} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        try {
+            TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $toDatabase);
+            $adminGranted = TenantDbAdmin::shouldGrantAdminOnCreate();
+        } catch (\PDOException $e) {
+            throw new \RuntimeException(
+                'Created database ['.$toDatabase.'] but could not GRANT access to `'
+                .TenantDbAdmin::username().'`: '.$e->getMessage()
+                .'. Ask RDS master to run: GRANT ALL ON `'.$toDatabase.'`.* TO \''
+                .TenantDbAdmin::username()."'@'%';",
+                0,
+                $e
+            );
+        }
+
+        $cloneStats = $this->cloneSchemaIntoDatabase($fromDatabase, $toDatabase, $pdo);
+
+        return [
+            ...$cloneStats,
+            'database_created' => true,
+            'admin_granted' => $adminGranted,
+        ];
+    }
+
+    /**
+     * Copy table + view definitions into an existing empty tenant database.
+     *
+     * @return array{tables: int, views: int, method: string}
+     */
+    public function cloneSchemaIntoDatabase(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
+    {
+        $pdo = $pdo ?? $this->adminPdo();
+
+        if (! $this->schemaExists($pdo, $toDatabase)) {
+            throw new \RuntimeException("Tenant database [{$toDatabase}] does not exist. Create it first.");
+        }
 
         $tables = $this->tableNames($pdo, $fromDatabase);
         if ($tables === []) {
             throw new \RuntimeException("No tables found in template database [{$fromDatabase}].");
         }
+
+        $to = TenantDbAdmin::quoteIdentifier($toDatabase);
 
         $pdo->exec('SET SESSION FOREIGN_KEY_CHECKS=0');
         $pdo->exec("USE {$to}");
@@ -61,6 +97,16 @@ class TenantDatabaseSchemaCloneService
             'views' => $viewCount,
             'method' => 'pdo',
         ];
+    }
+
+    /**
+     * @deprecated Use provisionTenantDatabase() for the full create → grant → clone flow.
+     *
+     * @return array{tables: int, views: int, method: string, database_created: bool, admin_granted: bool}
+     */
+    public function cloneSchema(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
+    {
+        return $this->provisionTenantDatabase($fromDatabase, $toDatabase, $pdo);
     }
 
     /**
