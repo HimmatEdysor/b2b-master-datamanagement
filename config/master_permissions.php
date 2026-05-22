@@ -10,7 +10,9 @@ return [
         'Dashboard' => ['dashboard.view'],
         'Companies' => [
             'tenants.view', 'tenants.create', 'tenants.edit', 'tenants.approve', 'tenants.delete',
+            'logs.view',
         ],
+        'Activity logs' => ['logs.view'],
         'Subscription plans' => ['plans.view', 'plans.create', 'plans.edit'],
         'Website' => ['pages.view', 'pages.create', 'pages.edit', 'blog.view', 'blog.create', 'blog.edit'],
         'Support tickets' => ['tickets.view', 'tickets.reply', 'tickets.manage'],

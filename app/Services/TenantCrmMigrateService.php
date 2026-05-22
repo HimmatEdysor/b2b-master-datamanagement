@@ -11,7 +11,8 @@ use Symfony\Component\Process\Process;
 class TenantCrmMigrateService
 {
     public function __construct(
-        protected TenantResolverService $resolver
+        protected TenantResolverService $resolver,
+        protected MasterActivityLogService $activityLog,
     ) {}
 
     /**
@@ -236,6 +237,15 @@ class TenantCrmMigrateService
             'user_id' => $by?->id,
             'meta' => ['output_excerpt' => Str::limit($output, 2000)],
         ]);
+
+        $this->activityLog->database(
+            'crm_migrate',
+            'ok',
+            'php artisan migrate --force completed',
+            $tenant,
+            $by,
+            ['database' => $tenant->database_name]
+        );
     }
 
     protected function persistFailure(Tenant $tenant, string $error, string $output, ?User $by): void
@@ -254,5 +264,14 @@ class TenantCrmMigrateService
             'user_id' => $by?->id,
             'meta' => ['output_excerpt' => Str::limit($output, 2000)],
         ]);
+
+        $this->activityLog->database(
+            'crm_migrate',
+            'failed',
+            Str::limit($error, 500),
+            $tenant,
+            $by,
+            ['database' => $tenant->database_name]
+        );
     }
 }

@@ -6,7 +6,9 @@ use App\Http\Controllers\Concerns\HandlesTenantLogo;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\TenantDomain;
+use App\Services\MasterActivityLogService;
 use App\Services\TenantProvisionerService;
+use App\Support\TenantUrl;
 use App\Support\TenantSlug;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -20,7 +22,8 @@ class CompanyRegistrationController extends Controller
     use HandlesTenantLogo;
 
     public function __construct(
-        protected TenantProvisionerService $provisioner
+        protected TenantProvisionerService $provisioner,
+        protected MasterActivityLogService $activityLog,
     ) {}
 
     public function create(): View
@@ -109,12 +112,26 @@ class CompanyRegistrationController extends Controller
         ]);
 
         if (! empty($validated['custom_domain'])) {
+            $host = Str::lower($validated['custom_domain']);
             TenantDomain::create([
                 'tenant_id' => $tenant->id,
-                'host' => Str::lower($validated['custom_domain']),
+                'host' => $host,
                 'type' => 'custom',
                 'is_primary' => false,
             ]);
+            $this->activityLog->domain('register_custom', 'ok', "Custom domain registered (pending approval): {$host}", $tenant);
+            $this->activityLog->dns(
+                'dns_update_required',
+                'info',
+                "After approval, configure DNS for {$host}",
+                $tenant,
+                null,
+                [
+                    'custom_host' => $host,
+                    'record_type' => 'CNAME',
+                    'recommended_target' => TenantUrl::subdomainHost($tenant->slug),
+                ]
+            );
         }
 
         if ($request->expectsJson()) {

@@ -300,6 +300,9 @@
         @if($tenant->operationLogs->isNotEmpty())
         <div class="card tenant-detail-card span-full">
             <h2 class="tenant-detail-heading">Recent activity</h2>
+            @if(master_can('logs.view'))
+                <p class="form-hint" style="margin-top:0"><a href="{{ route('admin.logs.index', ['channel' => 'database']) }}">View full activity logs →</a></p>
+            @endif
             <div class="table-scroll">
                 <table class="detail-table detail-table-logs">
                     <thead>

@@ -7,6 +7,7 @@ use App\Models\TenantDomain;
 use App\Support\TenantDomainHost;
 use App\Support\TenantSlug;
 use App\Support\TenantUrl;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -14,6 +15,7 @@ class TenantDomainService
 {
     public function __construct(
         protected TenantResolverService $resolver,
+        protected MasterActivityLogService $activityLog,
     ) {}
 
     /**
@@ -47,6 +49,8 @@ class TenantDomainService
             ]);
 
             $this->resolver->forgetHostCache($tenant->fresh(['domains']));
+            $this->logCustomDomainAdded($tenant, $host);
+            $this->activityLog->domain('add_custom', 'ok', "Custom domain added: {$host}", $tenant, Auth::user());
 
             return $domain;
         });
@@ -94,6 +98,7 @@ class TenantDomainService
             ]);
 
             $this->resolver->forgetHostCache($tenant->fresh(['domains']));
+            $this->activityLog->domain('add_subdomain_alias', 'ok', "Subdomain alias added: {$host}", $tenant, Auth::user());
 
             return $domain;
         });
@@ -116,6 +121,7 @@ class TenantDomainService
         });
 
         $this->resolver->forgetHostCache($tenant->fresh(['domains']));
+        $this->activityLog->domain('set_primary', 'ok', "Primary domain set to {$domain->host}", $tenant, Auth::user());
 
         return $domain->fresh();
     }
@@ -143,10 +149,33 @@ class TenantDomainService
         }
 
         $host = $domain->host;
+        $type = $domain->type;
         $domain->delete();
 
         cache()->forget('tenant:host:'.app(TenantResolverService::class)->normalizeHost($host));
         $this->resolver->forgetHostCache($tenant->fresh(['domains']));
+        $this->activityLog->domain('remove', 'ok', "Domain removed: {$host}", $tenant, Auth::user(), ['type' => $type]);
+    }
+
+    protected function logCustomDomainAdded(Tenant $tenant, string $host): void
+    {
+        $crmTarget = TenantUrl::subdomainHost($tenant->slug);
+        $base = TenantUrl::baseDomain();
+
+        $this->activityLog->dns(
+            'dns_update_required',
+            'info',
+            "Configure DNS for custom domain {$host}",
+            $tenant,
+            Auth::user(),
+            [
+                'custom_host' => $host,
+                'record_type' => 'CNAME',
+                'recommended_target' => $crmTarget,
+                'alternative' => "Or A record to your CRM server IP (same origin as *.{$base})",
+                'crm_url' => TenantUrl::urlForTenant($tenant),
+            ]
+        );
     }
 
     protected function assertHostAvailable(string $host, Tenant $tenant): void

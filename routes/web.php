@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ActivityLogController;
 use App\Http\Controllers\Admin\BlogPostController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\EditorImageUploadController;
@@ -42,6 +43,10 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
     Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
+
+    Route::middleware('permission:logs.view')->group(function () {
+        Route::get('logs', [ActivityLogController::class, 'index'])->name('logs.index');
+    });
 
     Route::middleware('permission:tenants.view')->group(function () {
         Route::post('tenants/{tenant}/approve', [TenantController::class, 'approve'])

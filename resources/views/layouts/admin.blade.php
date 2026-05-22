@@ -27,6 +27,9 @@
             <a href="{{ route('admin.tenants.create') }}">+ Add company</a>
             @endif
             @endif
+            @if(master_can('logs.view'))
+            <a href="{{ route('admin.logs.index') }}" class="{{ request()->routeIs('admin.logs.*') ? 'active' : '' }}">Activity logs</a>
+            @endif
             @if(master_can('tickets.view'))
             <a href="{{ route('admin.tickets.index') }}" class="{{ request()->routeIs('admin.tickets.*') ? 'active' : '' }}">Support tickets</a>
             @endif

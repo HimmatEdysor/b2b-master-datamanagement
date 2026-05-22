@@ -1190,3 +1190,57 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
 }
 .switch-toggle input:checked + .switch-slider { background: var(--primary); }
 .switch-toggle input:checked + .switch-slider:before { transform: translateX(20px); }
+
+/* Activity logs */
+.logs-page .page-lead { margin-top: 0; margin-bottom: 20px; color: var(--muted); }
+.logs-layout {
+    display: grid;
+    grid-template-columns: 200px 160px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 1100px) {
+    .logs-layout { grid-template-columns: 1fr 1fr; }
+    .logs-viewer { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+    .logs-layout { grid-template-columns: 1fr; }
+}
+.logs-nav-title { font-size: 13px; font-weight: 700; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.logs-channel-list, .logs-date-list { list-style: none; margin: 0; padding: 0; }
+.logs-channel-link, .logs-date-link {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+}
+.logs-channel-link:hover, .logs-date-link:hover { background: #f3f4f6; }
+.logs-channel-link.active, .logs-date-link.active {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
+}
+.logs-channel-label { display: block; font-weight: 600; font-size: 14px; }
+.logs-channel-desc { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+.logs-date-raw { display: block; font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 2px; }
+.logs-dates-panel { max-height: 70vh; overflow-y: auto; }
+.logs-viewer-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.logs-viewer-meta { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+.logs-viewer-content {
+    margin: 0;
+    padding: 14px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 65vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.logs-empty-hint { font-size: 13px; color: var(--muted); margin: 0; }

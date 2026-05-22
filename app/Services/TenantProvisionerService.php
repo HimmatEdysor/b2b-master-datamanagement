@@ -18,6 +18,7 @@ class TenantProvisionerService
         protected TenantDefaultUserService $defaultUserService,
         protected TenantS3FolderService $s3FolderService,
         protected TenantDatabaseUserService $databaseUserService,
+        protected MasterActivityLogService $activityLog,
     ) {}
 
     /**
@@ -46,6 +47,13 @@ class TenantProvisionerService
             $dbCredentials = $this->databaseUserService->provisionForTenant($tenant->fresh());
             if (! $withData) {
                 $this->seedDataService->seedFromTemplate($tenant);
+                $this->activityLog->database(
+                    'seed_reference',
+                    'ok',
+                    'Reference data seeded from template',
+                    $tenant,
+                    $by
+                );
             }
             $this->defaultUserService->provisionDefaultAdmin($tenant);
 
@@ -105,6 +113,7 @@ class TenantProvisionerService
                 'type' => 'subdomain',
                 'is_primary' => true,
             ]);
+            $this->activityLog->domain('ensure_subdomain', 'ok', "Primary subdomain set to {$subdomain}", $tenant);
         } elseif (TenantDomain::query()->where('host', $subdomain)->exists()) {
             return;
         } else {
@@ -114,14 +123,16 @@ class TenantProvisionerService
                 'type' => 'subdomain',
                 'is_primary' => true,
             ]);
+            $this->activityLog->domain('ensure_subdomain', 'ok', "Created primary subdomain {$subdomain}", $tenant);
         }
 
         TenantDomain::query()
             ->where('tenant_id', $tenant->id)
             ->where('type', 'subdomain')
             ->where('host', '!=', $subdomain)
-            ->each(function (TenantDomain $domain) {
+            ->each(function (TenantDomain $domain) use ($tenant) {
                 cache()->forget('tenant:host:'.$domain->host);
+                $this->activityLog->domain('remove_stale_subdomain', 'ok', "Removed stale subdomain {$domain->host}", $tenant);
                 $domain->delete();
             });
     }
@@ -160,8 +171,27 @@ class TenantProvisionerService
         ]);
 
         if (! $import->successful()) {
+            $this->activityLog->database(
+                'clone_database',
+                'failed',
+                trim($import->errorOutput() ?: 'Import failed'),
+                $tenant,
+                null,
+                ['from' => $from, 'to' => $to, 'with_data' => $withData]
+            );
             throw new \RuntimeException($import->errorOutput());
         }
+
+        $this->activityLog->database(
+            'clone_database',
+            'ok',
+            $withData
+                ? "Cloned schema and data from {$from} to {$to}"
+                : "Cloned schema from {$from} to {$to}",
+            $tenant,
+            null,
+            ['from' => $from, 'to' => $to, 'with_data' => $withData]
+        );
     }
 
     public function reserveDatabaseName(string $slug): string
@@ -178,5 +208,13 @@ class TenantProvisionerService
             'message' => $message,
             'user_id' => $by?->id,
         ]);
+
+        $this->activityLog->database(
+            $action,
+            $status,
+            $message ?? '',
+            $tenant,
+            $by
+        );
     }
 }

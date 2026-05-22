@@ -8,6 +8,10 @@ use Illuminate\Support\Str;
 
 class TenantDatabaseUserService
 {
+    public function __construct(
+        protected MasterActivityLogService $activityLog,
+    ) {}
+
     /** MySQL username length limit (user@host). */
     public const USERNAME_MAX_LENGTH = 32;
 
@@ -33,6 +37,15 @@ class TenantDatabaseUserService
             'database_username' => $username,
             'database_password' => $password,
         ]);
+
+        $this->activityLog->database(
+            'provision_db_user',
+            'ok',
+            "Dedicated MySQL user created for database {$databaseName}",
+            $tenant,
+            null,
+            ['username' => $username, 'database' => $databaseName]
+        );
 
         return [
             'username' => $username,

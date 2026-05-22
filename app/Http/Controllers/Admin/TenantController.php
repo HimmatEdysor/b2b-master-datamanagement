@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\TenantDomain;
+use App\Services\MasterActivityLogService;
 use App\Services\TenantCrmMigrateService;
 use App\Services\TenantDomainService;
 use App\Services\TenantProvisionerService;
@@ -28,6 +29,7 @@ class TenantController extends Controller
         protected TenantProvisionerService $provisioner,
         protected TenantResolverService $resolver,
         protected TenantCrmMigrateService $crmMigrate,
+        protected MasterActivityLogService $activityLog,
         protected TenantDomainService $domainService,
     ) {}
 
@@ -243,6 +245,7 @@ class TenantController extends Controller
     {
         $tenant->update(['status' => 'suspended']);
         $this->resolver->forgetHostCache($tenant);
+        $this->activityLog->domain('suspend', 'ok', 'Company suspended — CRM resolve disabled', $tenant, Auth::user());
 
         return back()->with('success', 'Company suspended.');
     }
@@ -263,6 +266,7 @@ class TenantController extends Controller
         ]);
 
         $this->resolver->forgetHostCache($tenant);
+        $this->activityLog->domain('reactivate', 'ok', 'Company reactivated — CRM URL available again', $tenant, Auth::user());
 
         return back()->with('success', 'Company reactivated. CRM URL is available again.');
     }

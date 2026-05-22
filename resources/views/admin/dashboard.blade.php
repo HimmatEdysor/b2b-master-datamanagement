@@ -44,6 +44,9 @@
 
     <div class="card">
         <h2 class="card-title">Recent activity</h2>
+        @if(master_can('logs.view'))
+            <p style="margin:0 0 12px"><a href="{{ route('admin.logs.index') }}">View all activity logs (database, S3, domain, DNS) →</a></p>
+        @endif
         <table class="data-table">
             <thead><tr><th>Action</th><th>Company</th><th>Status</th></tr></thead>
             <tbody>
