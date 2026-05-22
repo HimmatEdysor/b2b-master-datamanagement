@@ -59,13 +59,14 @@ class TenantCloneDatabaseCommand extends Command
             '-P', (string) $port,
             '-u', $user,
             ...$passArgs,
-            '--no-data',
-            '--skip-routines', '--skip-triggers', '--single-transaction',
+            ...TenantDbAdmin::mysqldumpFlags(schemaOnly: true),
             $from,
         ]);
 
         if (! $dump->successful()) {
-            $this->error($dump->errorOutput());
+            $this->error(TenantDbAdmin::normalizeMysqldumpError(
+                trim($dump->errorOutput() ?: $dump->output())
+            ));
 
             return self::FAILURE;
         }

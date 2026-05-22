@@ -51,6 +51,7 @@ return [
 
     /*
     | Seconds for mysqldump/mysql when cloning template → tenant DB (Horizon timeout uses this too).
+    | Clone uses --single-transaction --skip-lock-tables --no-tablespaces (RDS-safe, no FLUSH TABLES).
     */
     'tenant_db_clone_timeout' => (int) env('TENANT_DB_CLONE_TIMEOUT', 3000),
 

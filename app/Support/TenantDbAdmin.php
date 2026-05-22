@@ -63,4 +63,39 @@ class TenantDbAdmin
 
         return in_array($host, ['127.0.0.1', 'localhost', '::1'], true);
     }
+
+    /**
+     * mysqldump flags safe for AWS RDS (no FLUSH TABLES / RELOAD privileges).
+     *
+     * @return list<string>
+     */
+    public static function mysqldumpFlags(bool $schemaOnly = true): array
+    {
+        $flags = [
+            '--single-transaction',
+            '--skip-lock-tables',
+            '--no-tablespaces',
+            '--skip-routines',
+            '--skip-triggers',
+        ];
+
+        if ($schemaOnly) {
+            $flags[] = '--no-data';
+        }
+
+        return $flags;
+    }
+
+    public static function normalizeMysqldumpError(string $error): string
+    {
+        if (str_contains($error, 'FLUSH TABLES')
+            || str_contains($error, 'FLUSH_TABLES')
+            || str_contains($error, 'RELOAD')
+            || str_contains($error, '1227')) {
+            return 'Schema clone failed: RDS does not allow FLUSH TABLES. '
+                .'The app now uses --skip-lock-tables; restart Horizon (php artisan horizon:terminate) and retry provisioning.';
+        }
+
+        return $error;
+    }
 }

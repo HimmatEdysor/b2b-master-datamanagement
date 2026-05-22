@@ -42,4 +42,15 @@ class TenantDbAdminTest extends TestCase
         TenantDbAdmin::assertCanProvision();
         $this->assertSame([], TenantDbAdmin::mysqlPasswordArgs());
     }
+
+    #[Test]
+    public function mysqldump_flags_are_rds_safe(): void
+    {
+        $flags = TenantDbAdmin::mysqldumpFlags(schemaOnly: true);
+
+        $this->assertContains('--single-transaction', $flags);
+        $this->assertContains('--skip-lock-tables', $flags);
+        $this->assertContains('--no-tablespaces', $flags);
+        $this->assertContains('--no-data', $flags);
+    }
 }

@@ -524,17 +524,24 @@ class TenantProvisionerService
         }
 
         $dump = Process::timeout($timeout)->run([
-            'mysqldump', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
-            '--no-data', '--skip-routines', '--skip-triggers', '--single-transaction', $from,
+            'mysqldump',
+            '-h', $host,
+            '-P', (string) $port,
+            '-u', $user,
+            ...$passArgs,
+            ...TenantDbAdmin::mysqldumpFlags(schemaOnly: true),
+            $from,
         ]);
 
         if (! $dump->successful()) {
-            $err = trim($dump->errorOutput() ?: $dump->output());
+            $err = TenantDbAdmin::normalizeMysqldumpError(
+                trim($dump->errorOutput() ?: $dump->output())
+            );
             if (str_contains($err, 'timeout') || str_contains($err, 'exceeded')) {
                 $err .= ' Increase TENANT_DB_CLONE_TIMEOUT in .env (default 3000 seconds).';
             }
 
-            throw new \RuntimeException($err ?: 'mysqldump failed');
+            throw new \RuntimeException($err !== '' ? $err : 'mysqldump failed');
         }
 
         $import = Process::timeout($timeout)->input($dump->output())->run([
