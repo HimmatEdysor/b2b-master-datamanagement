@@ -10,6 +10,9 @@ namespace App\Support;
  */
 class TenantDbAdmin
 {
+    /** Bump when mysqldump RDS behaviour changes (grep on server to confirm deploy). */
+    public const MYSQLDUMP_RDS_BUILD = '2026-05-22-rds-safe';
+
     public static function host(): string
     {
         return (string) config('master.tenant_db_host', '127.0.0.1');
@@ -102,7 +105,7 @@ class TenantDbAdmin
      */
     public static function mysqldumpCommand(string $database, bool $schemaOnly = true): array
     {
-        return [
+        $command = [
             'mysqldump',
             '-h', self::host(),
             '-P', (string) self::port(),
@@ -110,6 +113,33 @@ class TenantDbAdmin
             ...self::mysqldumpFlags($schemaOnly),
             $database,
         ];
+
+        self::assertMysqldumpCommandIsRdsSafe($command);
+
+        return $command;
+    }
+
+    /**
+     * AWS RDS cannot grant RELOAD / FLUSH_TABLES — mysqldump must use --skip-lock-tables.
+     *
+     * @param  list<string>  $command
+     */
+    public static function assertMysqldumpCommandIsRdsSafe(array $command): void
+    {
+        if (! in_array('--skip-lock-tables', $command, true)) {
+            throw new \RuntimeException(
+                'mysqldump command is missing --skip-lock-tables (required on AWS RDS). '
+                .'Deploy code build '.self::MYSQLDUMP_RDS_BUILD.' and restart Horizon.'
+            );
+        }
+    }
+
+    /**
+     * Command string safe to log (no password).
+     */
+    public static function mysqldumpCommandForLog(string $database, bool $schemaOnly = true): string
+    {
+        return implode(' ', self::mysqldumpCommand($database, $schemaOnly));
     }
 
     public static function mysqlCommand(string ...$args): array
@@ -176,9 +206,10 @@ class TenantDbAdmin
             || str_contains($error, 'FLUSH_TABLES')
             || str_contains($error, 'RELOAD')
             || str_contains($error, '1227')) {
-            return 'Schema clone failed (RDS): mysqldump tried FLUSH TABLES, which is not allowed. '
-                .'Deploy the latest master code (uses --skip-lock-tables --no-tablespaces), run '
-                .'`php artisan horizon:terminate`, then retry. Cannot be fixed with GRANT RELOAD on RDS.';
+            return 'Schema clone failed (AWS RDS): mysqldump ran FLUSH TABLES (needs RELOAD — not allowed on RDS). '
+                .'Fix: deploy master code build '.self::MYSQLDUMP_RDS_BUILD.' (must include --skip-lock-tables), '
+                .'then `php artisan horizon:terminate` and `php artisan tenant:verify-db-clone`. '
+                .'If line 537 in TenantProvisionerService still throws the raw mysqldump text, Horizon is on OLD code.';
         }
 
         return $error;

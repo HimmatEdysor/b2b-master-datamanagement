@@ -543,7 +543,8 @@ class TenantProvisionerService
                 $tenant,
                 null,
                 [
-                    'command' => implode(' ', $dumpCommand),
+                    'command' => TenantDbAdmin::mysqldumpCommandForLog($from, schemaOnly: true),
+                    'build' => TenantDbAdmin::MYSQLDUMP_RDS_BUILD,
                     'exit_code' => $dump->exitCode(),
                     'from' => $from,
                     'to' => $to,
