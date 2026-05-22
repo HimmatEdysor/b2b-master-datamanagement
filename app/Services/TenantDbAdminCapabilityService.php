@@ -136,12 +136,17 @@ class TenantDbAdminCapabilityService
     protected function checkGrants(PDO $pdo): array
     {
         $required = ['CREATE', 'DROP', 'CREATE USER'];
+        if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
+            $required[] = 'GRANT OPTION';
+        }
+
         $grantText = $this->showGrantsText($pdo);
         $global = strtoupper($grantText);
 
         $checks = [];
         foreach ($required as $priv) {
             $has = str_contains($global, $priv)
+                || ($priv === 'GRANT OPTION' && str_contains($global, 'WITH GRANT OPTION'))
                 || (str_contains($global, 'ALL PRIVILEGES') && str_contains($global, 'ON *.*'));
             $checks[] = [
                 'name' => 'privilege_'.strtolower(str_replace(' ', '_', $priv)),
@@ -229,18 +234,26 @@ class TenantDbAdminCapabilityService
 
         try {
             $pdo->exec("CREATE DATABASE {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+            if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
+                TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $testDb);
+            }
+
             $pdo->exec("DROP DATABASE {$quoted}");
 
             return [
                 'name' => 'create_drop_database',
                 'ok' => true,
-                'detail' => 'Can CREATE and DROP a test database.',
+                'detail' => TenantDbAdmin::shouldGrantAdminOnCreate()
+                    ? 'Can CREATE DATABASE, GRANT admin on it, and DROP.'
+                    : 'Can CREATE and DROP a test database.',
             ];
         } catch (PDOException $e) {
             return [
                 'name' => 'create_drop_database',
                 'ok' => false,
-                'detail' => 'CREATE/DROP DATABASE test failed: '.$e->getMessage(),
+                'detail' => 'CREATE/GRANT/DROP DATABASE test failed: '.$e->getMessage()
+                    .' User needs CREATE + GRANT OPTION, or RDS master must pre-grant b2b_tenant_%.*',
             ];
         }
     }
@@ -293,7 +306,7 @@ class TenantDbAdminCapabilityService
 
 CREATE USER IF NOT EXISTS '{$user}'@'%' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
 
-GRANT CREATE, DROP, ALTER, INDEX, CREATE USER, PROCESS ON *.* TO '{$user}'@'%';
+GRANT CREATE, DROP, ALTER, INDEX, CREATE USER, GRANT OPTION, PROCESS ON *.* TO '{$user}'@'%';
 GRANT SELECT, SHOW VIEW ON `{$tpl}`.* TO '{$user}'@'%';
 GRANT ALL PRIVILEGES ON `{$prefix}%`.* TO '{$user}'@'%';
 
