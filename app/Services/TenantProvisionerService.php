@@ -529,6 +529,7 @@ class TenantProvisionerService
         $dump = Process::timeout($timeout)
             ->env($mysqlEnv)
             ->run($dumpCommand);
+            
 
         if (! $dump->successful()) {
             $err = TenantDbAdmin::normalizeMysqldumpError(

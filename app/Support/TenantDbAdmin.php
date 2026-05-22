@@ -91,6 +91,7 @@ class TenantDbAdmin
         ];
 
         if ($schemaOnly) {
+            
             $flags[] = '--no-data';
         }
 
