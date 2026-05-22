@@ -13,6 +13,8 @@ class TenantDomain extends Model
         'type',
         'is_primary',
         'dns_verified_at',
+        'dns_target_ip',
+        'dns_link_source',
         'ssl_status',
         'ssl_expires_at',
     ];

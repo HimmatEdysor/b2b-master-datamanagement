@@ -57,6 +57,12 @@
             @if(master_can('permissions.view'))
             <a href="{{ route('admin.permissions.index') }}" class="{{ request()->routeIs('admin.permissions.*') ? 'active' : '' }}">Permissions</a>
             @endif
+            @if(master_can('settings.view'))
+            <a href="{{ route('admin.settings.edit') }}" class="{{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">Web settings</a>
+            @endif
+            @if(master_can_view_horizon())
+            <a href="{{ url('/horizon') }}" target="_blank" rel="noopener" class="{{ request()->is('horizon*') ? 'active' : '' }}">Queue (Horizon) ↗</a>
+            @endif
             <hr style="border:0;border-top:1px solid rgba(255,255,255,.15);margin:12px 0">
             <a href="{{ route('home') }}" target="_blank">View website</a>
             <a href="{{ route('register') }}" target="_blank">Registration page</a>
@@ -81,6 +87,9 @@
             @endif
             @if(session('error'))
                 <div class="alert alert-error">{{ session('error') }}</div>
+            @endif
+            @if(session('warning'))
+                <div class="alert alert-warning">{{ session('warning') }}</div>
             @endif
             @yield('content')
         </main>

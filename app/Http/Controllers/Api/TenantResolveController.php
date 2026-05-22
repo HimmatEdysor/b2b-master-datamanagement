@@ -3,22 +3,28 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\TenantAccessService;
 use App\Services\TenantResolverService;
+use App\Services\TenantSubdomainCheckService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TenantResolveController extends Controller
 {
     public function __construct(
-        protected TenantResolverService $resolver
+        protected TenantResolverService $resolver,
+        protected TenantAccessService $access,
+        protected TenantSubdomainCheckService $subdomainChecks,
     ) {}
 
     /**
      * Single API for the main B2B CRM: pass subdomain / host, receive DB + branding config.
      *
-     * GET /api/v1/tenant/resolve?host=edysor.guaranteeadmit.com
+     * Checks master DB first: company status, subscription, plan expiry, then tenant DB credentials.
+     * Each call is logged in master DB (per-host check count + event log).
+     *
+     * GET /api/v1/tenant/resolve?host=apple.localhost
      * Header: Authorization: Bearer {CRM_MASTER_API_TOKEN}
-     * Or header: X-Tenant-Host: edysor.guaranteeadmit.com
      */
     public function __invoke(Request $request): JsonResponse
     {
@@ -29,6 +35,16 @@ class TenantResolveController extends Controller
         $host = is_string($host) ? $this->resolver->normalizeHost($host) : '';
 
         if ($host === '') {
+            $this->subdomainChecks->record(
+                $host ?: '(empty)',
+                null,
+                'invalid_host',
+                422,
+                'Missing host. Use ?host=, X-Tenant-Host, or Host header.',
+                null,
+                $request,
+            );
+
             return response()->json([
                 'success' => false,
                 'message' => 'Missing host. Use ?host=, X-Tenant-Host, or Host header.',
@@ -38,6 +54,16 @@ class TenantResolveController extends Controller
         $tenant = $this->resolver->resolveByHost($host);
 
         if (! $tenant) {
+            $this->subdomainChecks->record(
+                $host,
+                null,
+                'not_found',
+                404,
+                'No company configured for this host.',
+                null,
+                $request,
+            );
+
             return response()->json([
                 'success' => false,
                 'message' => 'No company configured for this host.',
@@ -45,29 +71,38 @@ class TenantResolveController extends Controller
             ], 404);
         }
 
-        if ($tenant->status === 'suspended') {
+        $access = $this->access->evaluate($tenant);
+
+        if (! ($access['allowed'] ?? false)) {
+            $this->subdomainChecks->record(
+                $host,
+                $tenant,
+                'denied',
+                $access['http_status'],
+                $access['message'],
+                $access['code'],
+                $request,
+            );
+
             return response()->json([
                 'success' => false,
-                'message' => 'This company account is suspended.',
+                'message' => $access['message'],
                 'host' => $host,
-            ], 403);
+                'status' => $access['company_status'],
+                'subscription_status' => $access['subscription_status'],
+                'code' => $access['code'],
+            ], $access['http_status']);
         }
 
-        if (! in_array($tenant->status, ['active', 'provisioning'], true)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Company is not available.',
-                'status' => $tenant->status,
-            ], 503);
-        }
-
-        if (! $tenant->isDatabaseProvisioned()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Company database is not provisioned yet.',
-                'status' => $tenant->status,
-            ], 503);
-        }
+        $this->subdomainChecks->record(
+            $host,
+            $tenant,
+            'allowed',
+            200,
+            'Tenant resolve OK',
+            'allowed',
+            $request,
+        );
 
         $tenant->loadMissing('domains');
 

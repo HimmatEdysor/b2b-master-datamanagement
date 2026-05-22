@@ -70,10 +70,22 @@ php artisan tenant:clone-database edysor          # interactive prompt: schema o
 php artisan tenant:clone-database edysor --data   # skip prompt; copy all data (slow)
 ```
 
-In **Master admin → Company → Approve**, use the checkbox **Copy all data from template database**; a browser confirm appears when checked.
+Provisioning copies **schema only** from the template DB, then row data only for tables listed in `config/master.php` → `tenant_seed_tables` (not the full template database).
 
 ## 6. Login / sessions
 
 If login cookies fail on `edysor.127.0.0.1`, use **edysor.localhost** instead (cookie domain works better).
 
 After changing `.env`, run: `php artisan config:clear`
+
+## 7. Production subdomain (`*.guaranteeadmit.com`)
+
+Local logs show `*.localhost` and `action=ensure_subdomain` — that is **not** public DNS.
+
+For live partner URLs (`https://{slug}.guaranteeadmit.com`) and Cloudflare A records, see **[PRODUCTION_SUBDOMAIN_DNS_TEST.md](./PRODUCTION_SUBDOMAIN_DNS_TEST.md)**.
+
+Quick CLI (production master + real server IP + Cloudflare):
+
+```bash
+php artisan tenant:dns-update yourslug
+```

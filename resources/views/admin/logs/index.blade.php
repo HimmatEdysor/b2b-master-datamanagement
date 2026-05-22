@@ -5,7 +5,10 @@
 
 @section('content')
 <div class="logs-page">
-    <p class="page-lead">Log files from <code>{{ $logIndexUrl }}</code> — select a file on the left to view in the editor.</p>
+    <p class="page-lead">
+        Log files from <code>{{ $logIndexUrl }}</code> — select a file on the left to view in the editor.
+        <a href="{{ route('admin.subdomain-checks.index') }}" class="btn btn-outline btn-sm" style="margin-left:8px">Subdomain check counts (DB)</a>
+    </p>
 
     <div class="logs-workspace">
         <aside class="logs-file-sidebar" aria-label="Log files from storage">
@@ -30,12 +33,20 @@
                                     @php
                                         $isActive = $channel === $file['channel'] && $date === $file['date'];
                                     @endphp
-                                    <li>
+                                    <li class="logs-file-row">
                                         <a href="{{ route('admin.logs.index', ['channel' => $file['channel'], 'date' => $file['date']]) }}"
                                            class="logs-file-item {{ $isActive ? 'is-active' : '' }}">
                                             <span class="logs-file-name">{{ $file['filename'] }}</span>
                                             <span class="logs-file-meta">{{ $file['size_label'] }}</span>
                                         </a>
+                                        <form method="POST"
+                                              action="{{ route('admin.logs.destroy', ['channel' => $file['channel'], 'date' => $file['date']]) }}"
+                                              class="logs-file-delete-form"
+                                              onsubmit="return confirm('Delete {{ $file['filename'] }}? This cannot be undone.');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="logs-file-delete-btn" title="Delete log file" aria-label="Delete {{ $file['filename'] }}">×</button>
+                                        </form>
                                     </li>
                                 @endforeach
                             </ul>
@@ -60,6 +71,14 @@
                     <div class="logs-editor-actions">
                         @include('admin.partials.copy-btn', ['text' => $content, 'title' => 'Copy log content', 'label' => 'Copy'])
                         <a href="{{ route('admin.logs.index', ['channel' => $channel, 'date' => $date]) }}" class="btn btn-outline btn-sm">Refresh</a>
+                        <form method="POST"
+                              action="{{ route('admin.logs.destroy', ['channel' => $channel, 'date' => $date]) }}"
+                              class="inline-form"
+                              onsubmit="return confirm('Delete {{ $date }}.log? This cannot be undone.');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="btn btn-outline btn-sm btn-danger-text">Delete file</button>
+                        </form>
                     </div>
                 </header>
 

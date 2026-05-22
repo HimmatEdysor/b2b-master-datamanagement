@@ -21,8 +21,12 @@ return [
             'description' => 'Subdomain and custom domain changes',
         ],
         'dns' => [
-            'label' => 'DNS',
-            'description' => 'DNS / hostname setup notes when domains are added',
+            'label' => 'DNS & SSL',
+            'description' => 'DNS Update, SSL Apply, verify, and Cloudflare A record changes',
+        ],
+        'resolve' => [
+            'label' => 'Subdomain checks',
+            'description' => 'CRM tenant resolve API — each host lookup from master DB',
         ],
     ],
 

@@ -357,7 +357,40 @@ table.data-table th { background: #f9fafb; font-weight: 600; color: var(--muted)
 .tenant-db-credentials-list dd { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .alert-success { background: #d1fae5; color: #065f46; }
 .alert-error { background: #fee2e2; color: #991b1b; }
+.alert-warning { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 .alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+.badge-dns-pending { font-weight: 600; }
+.badge-dns-linked { font-weight: 600; }
+.badge-ssl-pending { font-weight: 600; }
+.badge-ssl-complete { font-weight: 600; }
+.domain-dns-record-hint { margin: 4px 0 0; font-size: 12px; }
+.domain-dns-ip-note { margin-bottom: 0.75rem; }
+.domain-setup-steps { margin: 0 0 12px; padding: 14px 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; }
+.domain-setup-steps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.domain-setup-step { margin: 0; padding: 0 0 0 4px; border-left: 3px solid var(--border); padding-left: 12px; }
+.domain-setup-step.is-current { border-left-color: var(--warning); }
+.domain-setup-step.is-done { border-left-color: var(--success); }
+.domain-setup-step.is-waiting { opacity: 0.65; }
+.domain-setup-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.domain-setup-step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff;
+    font-size: 12px; font-weight: 700;
+}
+.domain-setup-step.is-done .domain-setup-step-num { background: var(--success); }
+.domain-setup-step-title { font-weight: 600; font-size: 14px; }
+.domain-setup-step .domain-step-form { display: inline-block; margin: 6px 8px 0 0; }
+.domain-setup-step-done-msg { margin: 6px 0 0; font-size: 13px; color: var(--success); font-weight: 500; }
+.domain-open-crm-btn { margin-top: 6px; margin-right: 10px; }
+.domain-access-url { display: block; margin-top: 6px; font-size: 12px; word-break: break-all; }
+.domain-setup-ready-link { display: block; margin-top: 4px; }
+.dns-pending-alert { margin-bottom: 1.25rem; }
+.badge-sm { font-size: 10px; padding: 2px 6px; vertical-align: middle; }
+.master-settings-section { margin-bottom: 1.25rem; }
+.master-settings-section .section-lead { margin-top: 0; }
+.master-settings-env-card { margin-bottom: 1.25rem; }
+.master-settings-actions { margin-top: 0.5rem; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: normal; }
 
 .form-group { margin-bottom: 16px; }
 .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
@@ -856,6 +889,85 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
 .btn-danger-text:hover { background: #fef2f2 !important; }
 
 /* Tenant detail (show) */
+.tenant-show-hero {
+    display: grid;
+    grid-template-columns: 1fr minmax(280px, 360px);
+    gap: 24px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+}
+.tenant-show-back {
+    font-size: 13px;
+    color: var(--muted);
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: 8px;
+}
+.tenant-show-back:hover { color: var(--primary); }
+.tenant-show-title {
+    margin: 0 0 6px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.tenant-show-subtitle {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--muted);
+}
+.tenant-show-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.tenant-show-access-warn {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #742a2a;
+}
+.tenant-show-actions-label {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+.tenant-action-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.tenant-action-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+.tenant-action-group:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.tenant-action-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+}
+.tenant-show-actions-hint {
+    margin: 12px 0 0;
+    font-size: 12px;
+}
+@media (max-width: 900px) {
+    .tenant-show-hero {
+        grid-template-columns: 1fr;
+    }
+}
 .tenant-show-toolbar {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -893,6 +1005,153 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border);
 }
+.tenant-status-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 14px;
+}
+.tenant-status-badge-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.tenant-status-badge-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+.badge-lg {
+    font-size: 13px;
+    padding: 6px 12px;
+}
+.detail-table-compact th,
+.detail-table-compact td {
+    padding: 8px 12px 8px 0;
+    font-size: 14px;
+}
+.tenant-crm-login-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+}
+.tenant-status-log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+}
+.tenant-status-log-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+.tenant-status-log-list li:last-child { border-bottom: 0; }
+.tenant-status-log-msg { color: var(--muted); }
+.tenant-status-actions {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.tenant-manage-card {
+    border: 2px solid #e2e8f0;
+    background: linear-gradient(180deg, #fafbfc 0%, #fff 40%);
+}
+.tenant-manage-lead { margin-top: 0; }
+.tenant-manage-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.tenant-manage-summary-meta { margin: 0; width: 100%; }
+.tenant-provision-block {
+    margin-bottom: 24px;
+    padding: 16px 18px;
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+}
+.tenant-provision-checklist {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    font-size: 14px;
+}
+.tenant-provision-checklist li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: var(--muted);
+}
+.tenant-provision-checklist li.is-done { color: var(--text); font-weight: 500; }
+.tenant-provision-checklist li.is-failed { color: #b91c1c; font-weight: 500; }
+.tenant-provision-checklist li.is-failed .tenant-provision-check-icon { color: #b91c1c; }
+.tenant-provision-stalled { margin-bottom: 12px; }
+.tenant-provision-retry-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 1rem; }
+.tenant-provision-check-icon {
+    display: inline-flex;
+    width: 1.25rem;
+    font-weight: 700;
+    color: var(--success);
+    flex-shrink: 0;
+}
+.tenant-provision-checklist li:not(.is-done) .tenant-provision-check-icon { color: var(--muted); }
+.tenant-provision-poll { margin-bottom: 12px; }
+.tenant-provision-worker-hint code { font-size: 12px; }
+.db-credentials-status-pending {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    color: #78350f;
+    padding: 10px 12px;
+    border-radius: 8px;
+}
+.tenant-manage-subscription {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+}
+.tenant-manage-migration-error { margin-top: 16px; }
+.tenant-manage-form-top {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.tenant-manage-form-actions {
+    margin-bottom: 20px;
+}
+.tenant-manage-crm {
+    margin-top: 4px;
+    padding: 14px 16px;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+}
+.tenant-crm-login-btn { margin-bottom: 4px; }
+@media (max-width: 1100px) {
+    .tenant-manage-form-top {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 700px) {
+    .tenant-manage-form-top {
+        grid-template-columns: 1fr;
+    }
+}
 .detail-subheading {
     margin: 16px 0 8px;
     font-size: 13px;
@@ -922,13 +1181,65 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     word-break: break-word;
 }
 .detail-table-domains .domain-actions {
-    white-space: nowrap;
     text-align: right;
+    min-width: 11rem;
 }
 .detail-table-domains .domain-actions .inline-form {
-    display: inline;
-    margin-left: 6px;
+    display: inline-block;
+    margin: 2px 0 2px 6px;
+    vertical-align: middle;
 }
+.detail-table-domains .domain-actions-primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+}
+.detail-table-domains .domain-actions-hint {
+    display: block;
+    margin: 0;
+    font-size: 0.8rem;
+}
+.tenant-manage-domains {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border, #e5e7eb);
+}
+.domain-manage-flash .alert {
+    margin: 0 0 12px;
+}
+.domain-setup-cell .domain-dns-applied-record,
+.domain-setup-cell .domain-dns-applied-meta {
+    margin: 6px 0 0;
+    display: block;
+}
+.domain-activity-log {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border, #e5e7eb);
+}
+.domain-activity-log-table .domain-log-time {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+.domain-activity-log-empty {
+    margin-top: 1rem;
+}
+.cloudflare-dns-guide {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.cloudflare-dns-guide-table th {
+    width: 10rem;
+    white-space: nowrap;
+}
+.domain-dns-bulk-wrap { display: inline-block; margin-left: 8px; vertical-align: middle; }
+.domain-dns-bulk-wrap .inline-form { display: inline; }
+.domain-step-form { margin-top: 8px; }
 .domain-platform-note {
     margin: 0 0 16px;
     padding: 12px 14px;
@@ -1253,6 +1564,33 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     padding: 4px 8px 6px;
 }
 .logs-file-list { list-style: none; margin: 0; padding: 0; }
+.logs-file-row {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    margin-bottom: 2px;
+}
+.logs-file-row .logs-file-item { flex: 1; min-width: 0; margin-bottom: 0; }
+.logs-file-delete-form { flex-shrink: 0; display: flex; align-items: stretch; }
+.logs-file-delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+.logs-file-delete-btn:hover {
+    color: var(--danger);
+    background: #fef2f2;
+    border-color: #fecaca;
+}
 .logs-file-item {
     display: flex;
     align-items: center;
@@ -1263,7 +1601,6 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     text-decoration: none;
     color: inherit;
     border: 1px solid transparent;
-    margin-bottom: 2px;
     font-size: 13px;
 }
 .logs-file-item:hover { background: #fff; border-color: var(--border); }
@@ -1331,3 +1668,91 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     }
     .logs-text-editor { min-height: 360px; }
 }
+
+/* Tenant approve on show page */
+.tenant-approve-card { border: 2px solid #93c5fd; background: linear-gradient(180deg, #f8fbff 0%, #fff 100%); }
+.tenant-approve-grid { margin-bottom: 1rem; max-width: 100%; }
+.tenant-approve-grid .form-control { max-width: 100%; }
+.tenant-approve-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+.tenant-approve-actions .btn-lg { padding: 12px 22px; font-size: 15px; }
+
+.db-credentials-status {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+.form-control-static { margin: 0; padding: 8px 0; }
+.db-credentials-status-pending { background: #eff6ff; border: 1px solid #93c5fd; color: #1e3a5f; }
+.db-credentials-status-ok { background: #ecfdf5; border: 1px solid #6ee7b7; color: #064e3b; }
+.db-credentials-status-warn { background: #fffbeb; border: 1px solid #fcd34d; color: #78350f; }
+.db-password-update-form {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    max-width: 420px;
+}
+.db-password-update-form .form-group { margin-bottom: 8px; }
+.db-password-regenerate-form { margin-top: 10px; }
+.crm-password-actions .db-password-regenerate-form { margin-top: 12px; }
+.db-credentials-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+.db-credential-password { max-width: 420px; }
+.db-password-input {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+.db-credential-password-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.detail-muted { color: var(--muted); font-size: 13px; }
+
+/* Custom domain DNS / SSL setup panel */
+.label-optional { font-weight: 400; color: var(--muted); font-size: 12px; }
+.custom-domain-setup-alert { margin-bottom: 1.25rem; }
+.custom-domain-setup.card-inner {
+    padding: 16px 18px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.custom-domain-setup-title { margin: 0 0 8px; font-size: 15px; }
+.custom-domain-setup-section { margin-top: 16px; }
+.custom-domain-setup-section > strong { display: block; margin-bottom: 8px; }
+.custom-domain-dns-table { margin-top: 8px; }
+.custom-domain-ssl-commands {
+    display: block;
+    margin: 8px 0;
+    padding: 12px 14px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.domain-setup-row td { padding-top: 0; border-top: 0; vertical-align: top; }
+.domain-setup-row .custom-domain-setup { margin: 0 0 12px; }

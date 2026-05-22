@@ -12,6 +12,22 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        SubscriptionPlan::query()->updateOrCreate(
+            ['slug' => 'free'],
+            [
+                'name' => 'Free',
+                'description' => 'Free tier with no subscription expiry.',
+                'price' => 0,
+                'currency' => 'INR',
+                'interval' => 'none',
+                'limits' => ['users' => 5],
+                'features' => ['Up to 5 users', 'Subdomain CRM', 'Community support'],
+                'sort_order' => 0,
+                'is_featured' => false,
+                'is_active' => true,
+            ]
+        );
+
         $starter = SubscriptionPlan::query()->updateOrCreate(
             ['slug' => 'starter'],
             [

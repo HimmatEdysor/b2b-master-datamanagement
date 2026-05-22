@@ -11,9 +11,13 @@
     const progress = document.getElementById('migrate-queue-progress');
     const wrap = document.getElementById('migrate-queue-wrap');
     const tbody = document.getElementById('migrate-queue-body');
+    const emptyState = document.getElementById('migrate-empty-state');
+    const labelLoad = btnRefresh && btnRefresh.querySelector('.btn-label-load');
+    const labelLoading = btnRefresh && btnRefresh.querySelector('.btn-label-loading');
 
     let queue = [];
     let running = false;
+    let loaded = false;
 
     function migrateUrl(tenantId) {
         return migrateTemplate.replace('__ID__', String(tenantId));
@@ -31,6 +35,13 @@
         if (status === 'running') return '<span class="badge badge-migrate-running">Running…</span>';
         if (status === 'pending') return '<span class="badge badge-migrate-pending">Pending</span>';
         return '<span class="badge badge-migrate-pending">—</span>';
+    }
+
+    function setLoadingUi(isLoading) {
+        if (!btnRefresh) return;
+        btnRefresh.disabled = isLoading || running;
+        if (labelLoad) labelLoad.classList.toggle('d-none', isLoading);
+        if (labelLoading) labelLoading.classList.toggle('d-none', !isLoading);
     }
 
     function renderQueue() {
@@ -52,7 +63,15 @@
                 '<td class="migrate-msg-cell">' + escapeHtml(t._run_message || '') + '</td>';
             tbody.appendChild(tr);
         });
-        if (wrap) wrap.classList.toggle('d-none', queue.length === 0);
+
+        const hasQueue = queue.length > 0;
+        if (wrap) wrap.classList.toggle('d-none', !hasQueue);
+        if (emptyState) {
+            emptyState.classList.toggle('is-loaded', loaded && hasQueue);
+            if (meta && loaded) {
+                emptyState.classList.remove('d-none');
+            }
+        }
     }
 
     function setRow(tenantId, status, message) {
@@ -67,7 +86,7 @@
     async function refreshQueue() {
         if (!queueUrl) return;
         if (meta) meta.textContent = 'Loading companies from master…';
-        if (btnRefresh) btnRefresh.disabled = true;
+        setLoadingUi(true);
         try {
             const res = await fetch(queueUrl, {
                 headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -81,20 +100,22 @@
             queue = (data.tenants || []).map(function (t) {
                 return Object.assign({}, t, { _run_status: 'pending', _run_message: '' });
             });
+            loaded = true;
             renderQueue();
-            const capped = data.capped ? ' (list capped — raise TENANT_CRM_MIGRATE_BULK_MAX_TENANTS)' : '';
+            const capped = data.capped ? ' (list capped)' : '';
             if (meta) {
                 meta.textContent = queue.length + ' of ' + (data.total || queue.length) +
-                    ' company databases loaded. Domains included per row.' + capped;
+                    ' databases loaded — ready to run migrations.' + capped;
             }
             if (btnRun) btnRun.disabled = queue.length === 0 || running;
         } catch (e) {
-            if (meta) meta.textContent = 'Error: ' + (e.message || 'Refresh failed');
+            if (meta) meta.textContent = 'Error: ' + (e.message || 'Load failed');
             queue = [];
+            loaded = false;
             renderQueue();
             if (btnRun) btnRun.disabled = true;
         } finally {
-            if (btnRefresh) btnRefresh.disabled = false;
+            setLoadingUi(false);
         }
     }
 
@@ -122,6 +143,7 @@
         if (running || queue.length === 0) return;
         running = true;
         if (btnRun) btnRun.disabled = true;
+        setLoadingUi(false);
         if (btnRefresh) btnRefresh.disabled = true;
 
         let okCount = 0;
@@ -142,13 +164,17 @@
         if (btnRefresh) btnRefresh.disabled = false;
         if (btnRun) btnRun.disabled = queue.length === 0;
         if (progress) {
-            progress.textContent = 'Finished: ' + okCount + ' succeeded, ' + failCount + ' failed. Refresh list if you added new companies or domains.';
+            progress.textContent = 'Finished: ' + okCount + ' succeeded, ' + failCount + ' failed. Load again if you added companies.';
         }
     }
 
     if (btnRefresh) btnRefresh.addEventListener('click', refreshQueue);
     if (btnRun) {
         btnRun.addEventListener('click', function () {
+            if (!loaded || queue.length === 0) {
+                alert('Click Load databases first.');
+                return;
+            }
             if (!confirm('Run php artisan migrate --force on ' + queue.length + ' databases, one after another?')) {
                 return;
             }

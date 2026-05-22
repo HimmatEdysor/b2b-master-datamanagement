@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\MasterActivityLogService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -55,5 +56,32 @@ class ActivityLogController extends Controller
             'selectedLabel',
             'storagePathLabel',
         ));
+    }
+
+    public function destroy(Request $request, string $channel, string $date): RedirectResponse
+    {
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return redirect()->route('admin.logs.index')->with('error', 'Invalid log date.');
+        }
+
+        if (! $this->logs->isValidChannel($channel)) {
+            return redirect()->route('admin.logs.index')->with('error', 'Invalid log channel.');
+        }
+
+        if (! $this->logs->fileExists($channel, $date)) {
+            return redirect()->route('admin.logs.index', ['channel' => $channel])
+                ->with('error', 'Log file not found or already deleted.');
+        }
+
+        if (! $this->logs->deleteLog($channel, $date)) {
+            return redirect()->route('admin.logs.index', ['channel' => $channel, 'date' => $date])
+                ->with('error', 'Could not delete the log file.');
+        }
+
+        $label = ($this->logs->channels()[$channel]['label'] ?? $channel).' / '.$date.'.log';
+
+        return redirect()
+            ->route('admin.logs.index')
+            ->with('success', 'Deleted log file: '.$label.'.');
     }
 }

@@ -161,6 +161,20 @@ class TenantUrl
         return $host ? static::urlForHost($host) : null;
     }
 
+    public static function loginUrlForHost(?string $host): ?string
+    {
+        $base = static::urlForHost($host);
+
+        return $base ? rtrim($base, '/').'/login' : null;
+    }
+
+    public static function loginUrlForTenant(Tenant $tenant): ?string
+    {
+        $host = static::hostForTenant($tenant);
+
+        return $host ? static::loginUrlForHost($host) : null;
+    }
+
     /** Host only (no scheme), for slug preview fields. */
     public static function displayHostForSlug(string $slug): string
     {

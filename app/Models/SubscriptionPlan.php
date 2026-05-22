@@ -38,6 +38,11 @@ class SubscriptionPlan extends Model
         return $query->where('is_active', true)->orderBy('sort_order')->orderBy('name');
     }
 
+    public function hasNoExpiry(): bool
+    {
+        return app(\App\Services\TenantSubscriptionService::class)->planHasNoExpiry($this);
+    }
+
     public function tenants(): HasMany
     {
         return $this->hasMany(Tenant::class);

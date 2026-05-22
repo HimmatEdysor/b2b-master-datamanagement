@@ -28,6 +28,8 @@ class Tenant extends Model
         'database_port',
         'database_username',
         'database_password',
+        'crm_admin_email',
+        'crm_admin_password',
         's3_folder',
         'brand_name',
         'logo_url',
@@ -36,11 +38,13 @@ class Tenant extends Model
         'support_email',
         'subscription_plan_id',
         'subscription_status',
+        'subscription_billed_at',
         'subscription_expires_at',
         'last_migration_at',
         'migration_status',
         'migration_error',
         'provision_error',
+        'provisioning_stage',
         'approved_at',
         'rejected_at',
         'approved_by',
@@ -50,6 +54,8 @@ class Tenant extends Model
     {
         return [
             'database_password' => 'encrypted',
+            'crm_admin_password' => 'encrypted',
+            'subscription_billed_at' => 'datetime',
             'subscription_expires_at' => 'datetime',
             'last_migration_at' => 'datetime',
             'approved_at' => 'datetime',
@@ -96,16 +102,52 @@ class Tenant extends Model
     /**
      * CRM / migrate use only values stored on this tenant row (never .env fallbacks).
      */
+    public function crmAdminEmail(): string
+    {
+        $email = trim((string) ($this->crm_admin_email ?? ''));
+
+        if ($email !== '') {
+            return strtolower($email);
+        }
+
+        return strtolower(trim((string) config('master.tenant_default_user.email', '')));
+    }
+
+    public function hasCrmAdminPassword(): bool
+    {
+        $password = $this->crm_admin_password;
+
+        return $password !== null && $password !== '';
+    }
+
+    public function hasDatabasePassword(): bool
+    {
+        $password = $this->database_password;
+
+        return $password !== null && $password !== '';
+    }
+
+    public function hasDatabaseUsername(): bool
+    {
+        $username = $this->database_username;
+
+        return $username !== null && $username !== '';
+    }
+
     public function isDatabaseProvisioned(): bool
     {
         return $this->database_name !== null
             && $this->database_name !== ''
             && $this->database_host !== null
             && $this->database_host !== ''
-            && $this->database_username !== null
-            && $this->database_username !== ''
-            && $this->database_password !== null
-            && $this->database_password !== '';
+            && $this->hasDatabaseUsername()
+            && $this->hasDatabasePassword();
+    }
+
+    /** MySQL user exists on tenant row but password missing (re-run “Create DB user”). */
+    public function hasPartialDatabaseCredentials(): bool
+    {
+        return $this->hasDatabaseUsername() && ! $this->hasDatabasePassword();
     }
 
     /**

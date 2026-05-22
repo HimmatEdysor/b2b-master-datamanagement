@@ -104,6 +104,17 @@ class MasterActivityLogService
         $this->log('dns', $action, $status, $message, $tenant, $user, $meta);
     }
 
+    public function resolve(
+        string $action,
+        string $status,
+        string $message,
+        ?Tenant $tenant = null,
+        ?User $user = null,
+        array $meta = [],
+    ): void {
+        $this->log('resolve', $action, $status, $message, $tenant, $user, $meta);
+    }
+
     /**
      * @return array<string, array{label: string, description: string}>
      */
@@ -274,6 +285,36 @@ class MasterActivityLogService
         return 'storage/logs/master-activity/';
     }
 
+    /**
+     * Delete a single daily log file. Only files under the configured master-activity path are allowed.
+     */
+    public function deleteLog(string $channel, string $date): bool
+    {
+        if (! $this->fileExists($channel, $date)) {
+            return false;
+        }
+
+        $path = $this->filePath($channel, $date);
+        if (! $this->isPathWithinLogRoot($path)) {
+            return false;
+        }
+
+        return @unlink($path);
+    }
+
+    protected function isPathWithinLogRoot(string $path): bool
+    {
+        $root = realpath(rtrim((string) config('master_logs.path'), DIRECTORY_SEPARATOR));
+        $resolved = realpath($path);
+
+        if ($root === false || $resolved === false) {
+            return false;
+        }
+
+        return str_starts_with($resolved, $root.DIRECTORY_SEPARATOR)
+            || $resolved === $root;
+    }
+
     protected function filePath(string $channel, string $date): string
     {
         return $this->channelDirectory($channel).DIRECTORY_SEPARATOR.$date.'.log';
@@ -284,6 +325,90 @@ class MasterActivityLogService
         $base = rtrim((string) config('master_logs.path'), DIRECTORY_SEPARATOR);
 
         return $base.DIRECTORY_SEPARATOR.$channel;
+    }
+
+    /**
+     * Recent log lines for one tenant (domain + dns channels, today and prior days).
+     *
+     * @param  list<string>  $channels
+     * @return list<array{at: string, status: string, action: string, message: string, channel: string}>
+     */
+    public function recentForTenant(int $tenantId, array $channels = ['dns', 'domain'], int $limit = 20): array
+    {
+        $needle = 'tenant_id='.$tenantId;
+        $rows = [];
+
+        foreach ($channels as $channel) {
+            if (! $this->isValidChannel($channel)) {
+                continue;
+            }
+
+            foreach (array_slice($this->datesForChannel($channel), 0, 7) as $date) {
+                $path = $this->filePath($channel, $date);
+                if (! is_file($path)) {
+                    continue;
+                }
+
+                $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+                foreach (array_reverse($lines) as $line) {
+                    if (! str_contains($line, $needle)) {
+                        continue;
+                    }
+
+                    $meta = $this->parseLogMeta($line);
+                    $linkSource = is_array($meta) ? ($meta['link_source'] ?? null) : null;
+                    if ($linkSource === null && is_array($meta) && isset($meta['provider'])) {
+                        $linkSource = str_contains((string) ($this->parseLogField($line, 'message') ?? ''), 'local dev')
+                            ? 'local'
+                            : (string) $meta['provider'];
+                    }
+
+                    $rows[] = [
+                        'at' => $this->parseLogField($line, 'timestamp') ?? $date,
+                        'status' => $this->parseLogField($line, 'status') ?? '—',
+                        'action' => $this->parseLogField($line, 'action') ?? '—',
+                        'message' => $this->parseLogField($line, 'message') ?? $line,
+                        'link_source' => $linkSource,
+                        'channel' => $channel,
+                    ];
+
+                    if (count($rows) >= $limit * 2) {
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        usort($rows, fn (array $a, array $b): int => strcmp($b['at'], $a['at']));
+
+        return array_slice($rows, 0, $limit);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function parseLogMeta(string $line): ?array
+    {
+        if (! preg_match('/meta=(\{.+})$/', $line, $matches)) {
+            return null;
+        }
+
+        $decoded = json_decode($matches[1], true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    protected function parseLogField(string $line, string $field): ?string
+    {
+        if ($field === 'timestamp' && preg_match('/^\[([^\]]+)\]/', $line, $m)) {
+            return $m[1];
+        }
+
+        if (preg_match('/\b'.preg_quote($field, '/').'=([^|]+)/', $line, $m)) {
+            return trim($m[1]);
+        }
+
+        return null;
     }
 
     public function formatFileSize(?int $bytes): string

@@ -78,7 +78,7 @@ class SubscriptionPlanController extends Controller
             'description' => ['nullable', 'string'],
             'price' => ['required', 'numeric', 'min:0'],
             'currency' => ['required', 'string', 'max:8'],
-            'interval' => ['required', 'in:monthly,yearly'],
+            'interval' => ['required', 'in:monthly,yearly,none'],
             'features_text' => ['nullable', 'string'],
             'limits_json' => ['nullable', 'string'],
             'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],

@@ -5,7 +5,7 @@
 
 @section('content')
 <div class="page-toolbar">
-    <p class="page-lead">Update company profile, contact, branding, and database settings.</p>
+    <p class="page-lead">Company profile, contact, and branding only. Approval, database provisioning, and subscription are on the <a href="{{ route('admin.tenants.show', $tenant) }}#tenant-manage">company view</a>.</p>
     <a href="{{ route('admin.tenants.show', $tenant) }}" class="btn btn-outline btn-sm">← View company</a>
 </div>
 

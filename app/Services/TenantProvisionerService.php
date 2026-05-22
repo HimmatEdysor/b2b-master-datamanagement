@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Jobs\ProvisionTenantJob;
 use App\Models\Tenant;
 use App\Models\TenantDomain;
 use App\Models\TenantOperationLog;
 use App\Models\User;
+use App\Support\TenantDbAdmin;
 use App\Support\TenantUrl;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
@@ -19,70 +22,349 @@ class TenantProvisionerService
         protected TenantS3FolderService $s3FolderService,
         protected TenantDatabaseUserService $databaseUserService,
         protected MasterActivityLogService $activityLog,
+        protected TenantSubscriptionService $subscriptions,
+        protected ProvisionTenantQueueService $provisionQueue,
     ) {}
 
     /**
-     * @return array{username: string, password: string}|null DB credentials when provision succeeds
+     * @return array{
+     *     database: array{username: string, password: string},
+     *     crm: array{email: string, password: string}
+     * }|null
      */
-    public function approve(Tenant $tenant, ?User $by = null, bool $withData = false): ?array
+    public function canApprove(Tenant $tenant): bool
     {
-        if (! in_array($tenant->status, ['pending', 'failed'], true)) {
-            throw new \InvalidArgumentException('Only pending or failed companies can be approved.');
+        if (in_array($tenant->status, ['pending', 'failed', 'provisioning'], true)) {
+            return true;
+        }
+
+        return $tenant->status === 'active' && ! $tenant->isDatabaseProvisioned();
+    }
+
+    public function canResumeAfterClone(Tenant $tenant): bool
+    {
+        $databaseName = $tenant->database_name;
+
+        if ($databaseName === null || $databaseName === '' || $tenant->isDatabaseProvisioned()) {
+            return false;
+        }
+
+        return $this->tenantHasProvisionedSchema($databaseName);
+    }
+
+    /**
+     * @return array{
+     *     clone_done: bool,
+     *     mysql_user_done: bool,
+     *     crm_admin_done: bool,
+     *     can_resume: bool
+     * }
+     */
+    public function provisioningProgress(Tenant $tenant): array
+    {
+        $databaseName = $tenant->database_name;
+        $cloneDone = $databaseName !== null
+            && $databaseName !== ''
+            && $this->tenantHasProvisionedSchema($databaseName);
+
+        $stage = $tenant->provisioning_stage;
+        $mysqlUserDone = $tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword();
+        $crmAdminDone = $tenant->hasCrmAdminPassword();
+        $isQueued = in_array($stage, ['queued', 'running', 'preparing', 'cloning', 'mysql_user', 'seeding', 'crm_admin'], true);
+        $isStalled = $this->isProvisioningStalled($tenant);
+
+        $incompleteSteps = [];
+        if (! $cloneDone) {
+            $incompleteSteps[] = 'clone';
+        }
+        if (! $mysqlUserDone) {
+            $incompleteSteps[] = 'mysql_user';
+        }
+        if (! $crmAdminDone) {
+            $incompleteSteps[] = 'crm_admin';
+        }
+
+        $errorMessage = $this->provisionQueue->resolveProvisionError($tenant);
+
+        $stageLabel = $errorMessage !== null && $errorMessage !== ''
+            ? 'Failed'
+            : ($isStalled
+                ? 'Stopped — use Retry below'
+                : $this->provisioningStageLabel($stage));
+
+        return [
+            'clone_done' => $cloneDone,
+            'mysql_user_done' => $mysqlUserDone,
+            'crm_admin_done' => $crmAdminDone,
+            'can_resume' => $cloneDone && ! $tenant->isDatabaseProvisioned(),
+            'stage' => $stage,
+            'stage_label' => $stageLabel,
+            'is_queued' => $isQueued,
+            'is_stalled' => $isStalled,
+            'needs_retry' => $this->needsProvisioningRetry($tenant),
+            'incomplete_steps' => $incompleteSteps,
+            'error_message' => $errorMessage,
+        ];
+    }
+
+    public function provisioningStageLabel(?string $stage): string
+    {
+        return match ($stage) {
+            'queued' => 'Queued — waiting for worker',
+            'running' => 'Starting…',
+            'preparing' => 'Domains & storage',
+            'cloning' => 'Cloning database (may take several minutes)',
+            'mysql_user' => 'Creating MySQL user',
+            'seeding' => 'Seeding reference data',
+            'crm_admin' => 'Creating CRM admin login',
+            'completed' => 'Complete',
+            'failed' => 'Failed',
+            default => 'Provisioning',
+        };
+    }
+
+    public function setProvisioningStage(Tenant $tenant, string $stage): void
+    {
+        $tenant->update(['provisioning_stage' => $stage]);
+    }
+
+    public function isProvisioningQueued(Tenant $tenant): bool
+    {
+        return $tenant->status === 'provisioning'
+            && in_array($tenant->provisioning_stage, ['queued', 'running', 'preparing', 'cloning', 'mysql_user', 'seeding', 'crm_admin'], true);
+    }
+
+    /**
+     * Job finished, failed, or never ran — company still marked provisioning without DB credentials.
+     */
+    public function isProvisioningStalled(Tenant $tenant): bool
+    {
+        if ($tenant->status === 'failed' || $tenant->provisioning_stage === 'failed') {
+            return true;
+        }
+
+        if ($tenant->status !== 'provisioning') {
+            return false;
+        }
+
+        if ($this->isProvisioningQueued($tenant)) {
+            return false;
+        }
+
+        return ! $tenant->isDatabaseProvisioned();
+    }
+
+    public function needsProvisioningRetry(Tenant $tenant): bool
+    {
+        if ($tenant->status === 'failed') {
+            return true;
+        }
+
+        return $this->isProvisioningStalled($tenant)
+            || ($tenant->status === 'pending' && $this->canResumeAfterClone($tenant));
+    }
+
+    public function queueProvisioning(Tenant $tenant, ?User $by): void
+    {
+        if (! $this->canApprove($tenant)) {
+            throw new \InvalidArgumentException('This company cannot be provisioned.');
+        }
+
+        $this->provisionQueue->dispatchProvisioning(
+            $tenant->id,
+            $by?->id,
+        );
+
+        $tenant->update([
+            'status' => 'provisioning',
+            'approved_at' => $tenant->approved_at ?? now(),
+            'approved_by' => $tenant->approved_by ?? $by?->id,
+            'rejected_at' => null,
+            'provision_error' => null,
+            'provisioning_stage' => 'queued',
+        ]);
+
+        $this->log($tenant, 'approve', 'ok', 'Provisioning queued for background worker', $by);
+    }
+
+    /**
+     * @return array{database: array{username: string, password: string}, crm: array{email: string, password: string}}|null
+     */
+    public function pullQueuedProvisionCredentials(int $tenantId): ?array
+    {
+        $key = 'tenant:'.$tenantId.':provision_credentials';
+        $cached = Cache::pull($key);
+
+        return is_array($cached) ? $cached : null;
+    }
+
+    /**
+     * Finish provisioning when the DB clone already exists (e.g. browser timeout after mysqldump).
+     *
+     * @return array{
+     *     database: array{username: string, password: string},
+     *     crm: array{email: string, password: string}
+     * }
+     */
+    public function resumeProvisioning(Tenant $tenant, ?User $by = null): array
+    {
+        if (! $this->canResumeAfterClone($tenant)) {
+            throw new \InvalidArgumentException('Database is not ready to resume. Run full provisioning instead.');
         }
 
         $tenant->update([
             'status' => 'provisioning',
-            'approved_at' => now(),
-            'approved_by' => $by?->id,
+            'provision_error' => null,
+        ]);
+
+        try {
+            return $this->completeProvisioning($tenant, $by);
+        } catch (\Throwable $e) {
+            $message = $this->provisionQueue->normalizeProvisionErrorMessage($e->getMessage());
+            $tenant->update([
+                'status' => 'failed',
+                'provision_error' => $message,
+                'provisioning_stage' => 'failed',
+            ]);
+            $this->log($tenant, 'provision', 'failed', $message, $by);
+            throw $e;
+        }
+    }
+
+    public function approve(Tenant $tenant, ?User $by = null): ?array
+    {
+        if (! $this->canApprove($tenant)) {
+            throw new \InvalidArgumentException('This company cannot be provisioned (use Suspend/Reactivate for other status changes).');
+        }
+
+        $resume = $this->canResumeAfterClone($tenant)
+            || $tenant->status === 'provisioning'
+            || ($tenant->status === 'active' && ! $tenant->isDatabaseProvisioned());
+
+        $tenant->update([
+            'status' => 'provisioning',
+            'approved_at' => $tenant->approved_at ?? now(),
+            'approved_by' => $tenant->approved_by ?? $by?->id,
             'rejected_at' => null,
             'provision_error' => null,
+            'provisioning_stage' => 'running',
         ]);
 
         $this->log($tenant, 'approve', 'ok', 'Approval started', $by);
 
+        $cloneTimeout = (int) config('master.tenant_db_clone_timeout', 600);
+        if (function_exists('set_time_limit')) {
+            @set_time_limit($cloneTimeout + 120);
+        }
+
         try {
+            $this->setProvisioningStage($tenant, 'preparing');
             $this->ensureDomains($tenant);
             $this->persistTenantDatabaseEndpoint($tenant);
             $s3Folder = $this->s3FolderService->ensureFolderForTenant($tenant);
-            $this->cloneDatabase($tenant, $withData);
-            $dbCredentials = $this->databaseUserService->provisionForTenant($tenant->fresh());
-            if (! $withData) {
-                $this->seedDataService->seedFromTemplate($tenant);
-                $this->activityLog->database(
-                    'seed_reference',
-                    'ok',
-                    'Reference data seeded from template',
+
+            $dbName = $tenant->database_name;
+            $schemaReady = $this->tenantHasProvisionedSchema($dbName);
+
+            if ($this->tenantDatabaseExists($dbName) && ! $schemaReady) {
+                $this->dropTenantDatabase($dbName);
+                $this->log(
                     $tenant,
+                    'provision',
+                    'ok',
+                    'Dropped incomplete tenant database (missing required tables) before re-clone',
                     $by
                 );
             }
-            $this->defaultUserService->provisionDefaultAdmin($tenant);
 
-            $tenant->update([
-                'status' => 'active',
-                'provision_error' => null,
-                'subscription_status' => $tenant->subscription_status ?: 'active',
-            ]);
+            $skipClone = $resume && $schemaReady;
 
-            $this->resolver->forgetHostCache($tenant);
-            $this->log(
-                $tenant,
-                'provision',
-                'ok',
-                ($withData ? 'Full DB copy' : 'Schema clone + reference seed')
-                    .', dedicated MySQL user ('.$dbCredentials['username'].'), S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
-                $by
-            );
+            if (! $skipClone) {
+                $this->setProvisioningStage($tenant, 'cloning');
+                $this->cloneDatabase($tenant);
+            } else {
+                $this->log($tenant, 'provision', 'ok', 'Skipped DB clone (schema already complete)', $by);
+            }
 
-            return $dbCredentials;
+            return $this->completeProvisioning($tenant, $by, $s3Folder);
         } catch (\Throwable $e) {
+            $message = $this->provisionQueue->normalizeProvisionErrorMessage($e->getMessage());
             $tenant->update([
                 'status' => 'failed',
-                'provision_error' => $e->getMessage(),
+                'provision_error' => $message,
+                'provisioning_stage' => 'failed',
             ]);
-            $this->log($tenant, 'provision', 'failed', $e->getMessage(), $by);
+            $this->log($tenant, 'provision', 'failed', $message, $by);
             throw $e;
         }
+    }
+
+    /**
+     * @return array{
+     *     database: array{username: string, password: string},
+     *     crm: array{email: string, password: string}
+     * }
+     */
+    protected function completeProvisioning(Tenant $tenant, ?User $by, ?string $s3Folder = null): array
+    {
+        $this->setProvisioningStage($tenant, 'mysql_user');
+        $dbCredentials = $this->databaseUserService->provisionForTenant($tenant->fresh());
+
+        $tenant->update([
+            'database_host' => TenantDbAdmin::host(),
+            'database_port' => TenantDbAdmin::port(),
+        ]);
+
+        $this->setProvisioningStage($tenant, 'seeding');
+        $this->seedDataService->seedFromTemplate($tenant);
+        $this->activityLog->database(
+            'seed_reference',
+            'ok',
+            'Reference data seeded from template (config tenant_seed_tables)',
+            $tenant,
+            $by
+        );
+
+        $this->seedDataService->applyCloneCustomization($tenant);
+
+        $this->setProvisioningStage($tenant, 'crm_admin');
+        $crmCredentials = $this->defaultUserService->provisionDefaultAdmin($tenant->fresh());
+
+        $tenant->loadMissing('subscriptionPlan');
+        $plan = $tenant->subscriptionPlan;
+        $billedAt = now()->startOfDay();
+        $expiresAt = $plan
+            ? $this->subscriptions->expiresAtFromBilling($plan, $billedAt)
+            : null;
+
+        if ($plan && $this->subscriptions->planHasNoExpiry($plan)) {
+            $billedAt = null;
+            $expiresAt = null;
+        }
+
+        $tenant->update([
+            'status' => 'active',
+            'provision_error' => null,
+            'provisioning_stage' => 'completed',
+            'subscription_status' => $tenant->subscription_status ?: 'active',
+            'subscription_billed_at' => $billedAt,
+            'subscription_expires_at' => $expiresAt,
+        ]);
+
+        $this->resolver->forgetHostCache($tenant);
+        $this->log(
+            $tenant,
+            'provision',
+            'ok',
+            'Schema clone + reference seed (tenant_seed_tables)'
+                .', dedicated MySQL user ('.$dbCredentials['username'].'), S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
+            $by
+        );
+
+        return [
+            'database' => $dbCredentials,
+            'crm' => $crmCredentials,
+        ];
     }
 
     public function reject(Tenant $tenant, ?User $by = null, ?string $reason = null): void
@@ -127,6 +409,8 @@ class TenantProvisionerService
             $this->activityLog->domain('ensure_subdomain', 'ok', "Created primary subdomain {$subdomain}", $tenant);
         }
 
+        app(TenantDomainDnsService::class)->provisionAllForTenant($tenant->fresh(['domains']));
+
         TenantDomain::query()
             ->where('tenant_id', $tenant->id)
             ->where('type', 'subdomain')
@@ -138,37 +422,125 @@ class TenantProvisionerService
             });
     }
 
-    public function cloneDatabase(Tenant $tenant, bool $withData = false): void
+    protected function tenantDatabaseExists(string $databaseName): bool
     {
+        if ($databaseName === '') {
+            return false;
+        }
+
+        $row = $this->adminPdo()->prepare(
+            'SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?'
+        );
+        $row->execute([$databaseName]);
+
+        return (bool) $row->fetchColumn();
+    }
+
+    /**
+     * True when the tenant database exists and has core CRM tables (e.g. users).
+     */
+    protected function tenantHasProvisionedSchema(string $databaseName): bool
+    {
+        if (! $this->tenantDatabaseExists($databaseName)) {
+            return false;
+        }
+
+        foreach ($this->requiredProvisionTables() as $table) {
+            if (! $this->tenantTableExists($databaseName, $table)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function requiredProvisionTables(): array
+    {
+        $tables = config('master.tenant_provision_required_tables', ['users']);
+
+        return array_values(array_filter(
+            is_array($tables) ? $tables : ['users'],
+            fn ($t) => is_string($t) && $t !== ''
+        ));
+    }
+
+    protected function tenantTableExists(string $databaseName, string $table): bool
+    {
+        $stmt = $this->adminPdo()->prepare(
+            'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?'
+        );
+        $stmt->execute([$databaseName, $table]);
+
+        return (int) $stmt->fetchColumn() > 0;
+    }
+
+    protected function dropTenantDatabase(string $databaseName): void
+    {
+        if ($databaseName === '') {
+            return;
+        }
+
+        TenantDbAdmin::assertCanProvision();
+
+        $quoted = '`'.str_replace('`', '``', $databaseName).'`';
+        $this->adminPdo()->exec("DROP DATABASE IF EXISTS {$quoted}");
+    }
+
+    protected function adminPdo(): \PDO
+    {
+        TenantDbAdmin::assertCanProvision();
+
+        return new \PDO(
+            sprintf('mysql:host=%s;port=%d;charset=utf8mb4', TenantDbAdmin::host(), TenantDbAdmin::port()),
+            TenantDbAdmin::username(),
+            TenantDbAdmin::password(),
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+        );
+    }
+
+    public function cloneDatabase(Tenant $tenant): void
+    {
+        TenantDbAdmin::assertCanProvision();
+
         $from = config('master.template_database');
         $to = $tenant->database_name;
-        $host = config('master.tenant_db_host');
-        $port = config('master.tenant_db_port');
-        $user = config('master.tenant_db_username');
-        $pass = config('master.tenant_db_password');
-        $passArgs = ($pass !== '' && $pass !== null) ? ['-p'.$pass] : [];
+        $host = TenantDbAdmin::host();
+        $port = TenantDbAdmin::port();
+        $user = TenantDbAdmin::username();
+        $passArgs = TenantDbAdmin::mysqlPasswordArgs();
 
-        $create = Process::run([
+        $timeout = (float) config('master.tenant_db_clone_timeout', 600);
+
+        $create = Process::timeout($timeout)->run([
             'mysql', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
             '-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
         ]);
 
         if (! $create->successful()) {
-            throw new \RuntimeException($create->errorOutput());
+            throw new \RuntimeException(trim($create->errorOutput() ?: 'CREATE DATABASE failed'));
         }
 
-        $dumpFlags = $withData ? [] : ['--no-data'];
-        $dump = Process::run([
+        $dump = Process::timeout($timeout)->run([
             'mysqldump', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
-            ...$dumpFlags, '--skip-routines', '--skip-triggers', '--single-transaction', $from,
+            '--no-data', '--skip-routines', '--skip-triggers', '--single-transaction', $from,
         ]);
 
         if (! $dump->successful()) {
-            throw new \RuntimeException($dump->errorOutput());
+            $err = trim($dump->errorOutput() ?: $dump->output());
+            if (str_contains($err, 'timeout') || str_contains($err, 'exceeded')) {
+                $err .= ' Increase TENANT_DB_CLONE_TIMEOUT in .env (default 3000 seconds).';
+            }
+
+            throw new \RuntimeException($err ?: 'mysqldump failed');
         }
 
-        $import = Process::input($dump->output())->run([
-            'mysql', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs, $to,
+        $import = Process::timeout($timeout)->input($dump->output())->run([
+            'mysql', '-h', $host, '-P', (string) $port, '-u', $user, ...$passArgs,
+            '--init-command=SET SESSION FOREIGN_KEY_CHECKS=0;',
+            $to,
         ]);
 
         if (! $import->successful()) {
@@ -178,7 +550,7 @@ class TenantProvisionerService
                 trim($import->errorOutput() ?: 'Import failed'),
                 $tenant,
                 null,
-                ['from' => $from, 'to' => $to, 'with_data' => $withData]
+                ['from' => $from, 'to' => $to]
             );
             throw new \RuntimeException($import->errorOutput());
         }
@@ -186,12 +558,10 @@ class TenantProvisionerService
         $this->activityLog->database(
             'clone_database',
             'ok',
-            $withData
-                ? "Cloned schema and data from {$from} to {$to}"
-                : "Cloned schema from {$from} to {$to}",
+            "Cloned schema from {$from} to {$to}",
             $tenant,
             null,
-            ['from' => $from, 'to' => $to, 'with_data' => $withData]
+            ['from' => $from, 'to' => $to]
         );
     }
 

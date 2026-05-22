@@ -32,7 +32,10 @@ class MasterActivityLogServiceTest extends TestCase
         $this->assertTrue($service->isValidChannel('database'));
         $this->assertFalse($service->isValidChannel('../etc'));
 
-        @unlink($base.'/database/'.$date.'.log');
+        $this->assertTrue($service->deleteLog('database', $date));
+        $this->assertFalse($service->fileExists('database', $date));
+        $this->assertFalse($service->deleteLog('database', $date));
+
         @rmdir($base.'/database');
         @rmdir($base);
     }

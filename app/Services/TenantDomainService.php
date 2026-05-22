@@ -16,6 +16,7 @@ class TenantDomainService
     public function __construct(
         protected TenantResolverService $resolver,
         protected MasterActivityLogService $activityLog,
+        protected TenantDomainDnsService $dns,
     ) {}
 
     /**
@@ -51,6 +52,7 @@ class TenantDomainService
             $this->resolver->forgetHostCache($tenant->fresh(['domains']));
             $this->logCustomDomainAdded($tenant, $host);
             $this->activityLog->domain('add_custom', 'ok', "Custom domain added: {$host}", $tenant, Auth::user());
+            $this->dns->provisionForDomain($domain->fresh(), $tenant);
 
             return $domain;
         });
@@ -99,6 +101,7 @@ class TenantDomainService
 
             $this->resolver->forgetHostCache($tenant->fresh(['domains']));
             $this->activityLog->domain('add_subdomain_alias', 'ok', "Subdomain alias added: {$host}", $tenant, Auth::user());
+            $this->dns->provisionForDomain($domain->fresh(), $tenant);
 
             return $domain;
         });
@@ -214,6 +217,8 @@ class TenantDomainService
             && in_array($domain->type, ['primary', 'custom'], true)
             && TenantDomainHost::isBaseDomainHost($domain->host);
 
+        $dns = $this->dns->statusFor($domain, $tenant);
+
         return [
             'id' => $domain->id,
             'host' => $host,
@@ -222,6 +227,7 @@ class TenantDomainService
             'url' => TenantUrl::urlForHost($host),
             'is_platform_default' => $isDefaultPlatform,
             'label' => $this->domainLabel($domain, $tenant, $isDefaultPlatform),
+            'dns' => $dns,
         ];
     }
 

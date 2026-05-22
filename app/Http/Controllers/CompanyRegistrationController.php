@@ -8,6 +8,8 @@ use App\Models\Tenant;
 use App\Models\TenantDomain;
 use App\Services\MasterActivityLogService;
 use App\Services\TenantProvisionerService;
+use App\Support\TenantDbAdmin;
+use App\Support\TenantDomainHost;
 use App\Support\TenantUrl;
 use App\Support\TenantSlug;
 use Illuminate\Http\JsonResponse;
@@ -44,9 +46,7 @@ class CompanyRegistrationController extends Controller
 
         $request->merge([
             'slug' => TenantSlug::normalize($request->input('slug')),
-            'custom_domain' => $request->filled('custom_domain')
-                ? preg_replace('/\s+/', '', strtolower(trim($request->input('custom_domain'))))
-                : null,
+            'custom_domain' => TenantDomainHost::prepareNullableHost($request->input('custom_domain')),
         ]);
 
         $validated = $request->validate([
@@ -58,7 +58,7 @@ class CompanyRegistrationController extends Controller
             'state' => ['required', 'string', 'max:120'],
             'country' => ['required', 'string', 'max:120'],
             'slug' => TenantSlug::validationRules(),
-            'custom_domain' => ['nullable', 'string', 'max:255', 'regex:/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i'],
+            'custom_domain' => TenantDomainHost::optionalCustomDomainRules(),
             'brand_name' => ['nullable', 'string', 'max:255'],
             ...$this->logoValidationRules(),
             'support_email' => ['nullable', 'email', 'max:255'],
@@ -79,6 +79,7 @@ class CompanyRegistrationController extends Controller
             'slug.required' => 'Subdomain is required.',
             'slug.regex' => 'Subdomain can only contain lowercase letters, numbers, and hyphens — no spaces (e.g. data not "data test").',
             'slug.unique' => 'This subdomain is already taken. Choose another.',
+            'custom_domain.regex' => 'Enter a valid hostname (e.g. crm.example.com) without http://. Leave blank if not needed.',
             ...$this->logoValidationMessages(),
         ]);
 
@@ -90,7 +91,7 @@ class CompanyRegistrationController extends Controller
             'status' => 'pending',
             'database_name' => $this->provisioner->reserveDatabaseName($validated['slug']),
             'database_host' => null,
-            'database_port' => 3306,
+            'database_port' => null,
             'database_username' => null,
             'database_password' => null,
             's3_folder' => null,

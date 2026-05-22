@@ -99,20 +99,28 @@
             @error('database_name')<p class="field-error">{{ $message }}</p>@enderror
         </div>
 
+        @if($isCreate)
         <div class="form-group">
-            <label for="status">{{ $isCreate ? 'Initial status' : 'Company status' }}</label>
+            <label for="status">Initial status</label>
             <select id="status" name="status" class="form-control">
-                @foreach($isCreate ? $createStatuses : $tenantStatuses as $statusValue)
-                    <option value="{{ $statusValue }}" @selected(old('status', $tenant?->status ?? 'pending') === $statusValue)>
+                @foreach($createStatuses as $statusValue)
+                    <option value="{{ $statusValue }}" @selected(old('status', 'pending') === $statusValue)>
                         {{ $tenantStatusLabels[$statusValue] ?? ucfirst($statusValue) }}
                     </option>
                 @endforeach
             </select>
-            @if(!$isCreate && $tenant?->isPending())
-                <p class="form-hint">Use <strong>Approve & provision</strong> on the company page to create the database and set status to active.</p>
-            @endif
+            <p class="form-hint">New companies should stay <strong>Pending</strong> until you use <strong>Approve & provision</strong> on the company page.</p>
             @error('status')<p class="field-error">{{ $message }}</p>@enderror
         </div>
+        @else
+        <div class="form-group">
+            <label>Company status</label>
+            <p class="form-control-static">
+                <span class="badge badge-{{ $tenant->status }}">{{ $tenantStatusLabels[$tenant->status] ?? ucfirst($tenant->status) }}</span>
+            </p>
+            <p class="form-hint">Changed only by <strong>Approve</strong>, <strong>Reject</strong>, <strong>Suspend</strong>, or <strong>Reactivate</strong> — not here.</p>
+        </div>
+        @endif
 
         <div class="form-group">
             <label for="subscription_plan_id">Subscription plan</label>
@@ -141,10 +149,10 @@
         </div>
 
         <div class="form-group span-2">
-            <label for="custom_domain">{{ $isCreate ? 'Custom domain (optional)' : 'Add custom domain (optional)' }}</label>
+            <label for="custom_domain">{{ $isCreate ? 'Custom domain (optional)' : 'Add custom domain (optional)' }} <span class="label-optional">not required</span></label>
             <input type="text" id="custom_domain" name="custom_domain" class="form-control"
                    value="{{ old('custom_domain') }}"
-                   placeholder="crm.example.com">
+                   placeholder="crm.example.com" inputmode="url" autocapitalize="off">
             <p class="form-hint">
                 @if($isCreate)
                     White-label hostname. Subdomain <code>{slug}.{{ $baseDomain }}</code> is added on approval ({{ TenantUrl::environmentLabel() }}).
@@ -284,7 +292,7 @@
         </label>
         <p class="form-hint">Runs clone + domain setup now. Leave unchecked to review later.</p>
     </div>
-    @include('admin.tenants._clone-database-options', ['withDataChecked' => old('with_data')])
+    @include('admin.tenants._clone-database-info')
     @endif
 </fieldset>
 
@@ -334,19 +342,20 @@
         });
     }
 
-    customDomainInput?.addEventListener('input', function () {
-        const cleaned = customDomainInput.value.replace(/\s/g, '').toLowerCase();
-        if (customDomainInput.value !== cleaned) customDomainInput.value = cleaned;
-    });
+    function cleanCustomDomainInput() {
+        if (!customDomainInput) return;
+        let v = customDomainInput.value.trim().toLowerCase().replace(/\s/g, '');
+        v = v.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
+        if (customDomainInput.value !== v) customDomainInput.value = v;
+    }
+    customDomainInput?.addEventListener('input', cleanCustomDomainInput);
     customDomainInput?.addEventListener('keydown', function (e) {
         if (e.key === ' ') e.preventDefault();
     });
 
     form?.addEventListener('submit', function () {
         if (isCreate && slugInput) slugInput.value = window.sanitizeTenantSlugInput(slugInput.value);
-        if (customDomainInput?.value) {
-            customDomainInput.value = customDomainInput.value.replace(/\s/g, '').toLowerCase();
-        }
+        cleanCustomDomainInput();
     });
 
     dbInput?.addEventListener('input', function () {

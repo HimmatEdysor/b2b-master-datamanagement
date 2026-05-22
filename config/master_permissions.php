@@ -19,6 +19,8 @@ return [
         'Admin users' => ['users.view', 'users.create', 'users.edit', 'users.delete'],
         'Roles' => ['roles.view', 'roles.create', 'roles.edit'],
         'Permissions' => ['permissions.view', 'permissions.create', 'permissions.edit'],
+        'Master settings' => ['settings.view', 'settings.edit'],
+        'Queue (Horizon)' => ['horizon.view'],
     ],
 
     'super_admin_role' => 'super-admin',

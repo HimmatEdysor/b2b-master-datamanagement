@@ -7,11 +7,17 @@ use App\Http\Controllers\Controller;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\TenantDomain;
+use App\Models\TenantSubdomainCheckStat;
 use App\Services\MasterActivityLogService;
 use App\Services\TenantCrmMigrateService;
 use App\Services\TenantDomainService;
+use App\Services\TenantAccessService;
+use App\Services\TenantDatabaseUserService;
+use App\Services\TenantDefaultUserService;
 use App\Services\TenantProvisionerService;
 use App\Services\TenantResolverService;
+use App\Services\TenantSubscriptionService;
+use Carbon\Carbon;
 use App\Support\TenantDomainHost;
 use App\Support\TenantSlug;
 use App\Support\TenantUrl;
@@ -31,6 +37,7 @@ class TenantController extends Controller
         protected TenantCrmMigrateService $crmMigrate,
         protected MasterActivityLogService $activityLog,
         protected TenantDomainService $domainService,
+        protected TenantSubscriptionService $subscriptions,
     ) {}
 
     public function index(Request $request): View
@@ -116,24 +123,18 @@ class TenantController extends Controller
         }
 
         if ($request->boolean('approve_immediately')) {
-            $withData = $request->boolean('with_data');
             try {
-                $dbCredentials = $this->provisioner->approve($tenant->fresh(), Auth::user(), $withData);
+                $this->provisioner->queueProvisioning($tenant->fresh(), Auth::user());
             } catch (\Throwable $e) {
                 return redirect()
                     ->route('admin.tenants.show', $tenant)
-                    ->with('error', 'Created but provisioning failed: '.$e->getMessage());
+                    ->with('error', 'Created but could not queue provisioning: '.$e->getMessage());
             }
 
-            $cloneNote = $withData
-                ? 'Full template data was copied into the tenant database.'
-                : 'Database structure was cloned; reference data was seeded.';
-
-            return $this->redirectAfterProvision(
-                redirect()->route('admin.tenants.show', $tenant),
-                'Company approved and database provisioned. '.$cloneNote,
-                $dbCredentials
-            );
+            return redirect()
+                ->route('admin.tenants.show', $tenant)
+                ->with('success', 'Company created. Database provisioning is running in the queue — keep this page open or refresh for status.')
+                ->withFragment('tenant-manage');
         }
 
         return redirect()
@@ -150,12 +151,114 @@ class TenantController extends Controller
             'operationLogs' => fn ($q) => $q->with('user')->latest()->limit(20),
         ]);
 
-        $resolveHost = TenantUrl::hostForTenant($tenant);
-        $resolveUrl = $tenant->isActive() && $resolveHost
-            ? url('/api/v1/tenant/resolve?host='.$resolveHost)
+        $crmHost = TenantUrl::hostForTenant($tenant);
+        $crmFullUrl = TenantUrl::urlForTenant($tenant);
+        $resolveUrl = $tenant->isActive() && $crmHost
+            ? url('/api/v1/tenant/resolve?host='.$crmHost)
             : null;
 
-        return view('admin.tenants.show', compact('tenant', 'resolveUrl'));
+        $subdomainCheckStats = TenantSubdomainCheckStat::query()
+            ->where('tenant_id', $tenant->id)
+            ->orWhere('slug', $tenant->slug)
+            ->orderByDesc('check_count')
+            ->get();
+
+        $plans = SubscriptionPlan::query()->where('is_active', true)->orderBy('name')->get();
+        $planBillingMeta = $plans->mapWithKeys(fn (SubscriptionPlan $plan) => [
+            (string) $plan->id => $this->subscriptions->planBillingMeta($plan),
+        ]);
+
+        $access = app(TenantAccessService::class)->evaluate($tenant);
+        $crmAccess = ($access['allowed'] ?? false)
+            ? ['ok' => true]
+            : ['ok' => false, 'message' => $access['message'] ?? 'CRM access denied'];
+
+        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        if ($provisionQueue->clearStuckQueuedState($tenant->fresh())) {
+            $tenant->refresh();
+            session()->flash('warning', 'Queue job was missing — status reset. Click Retry to provision again.');
+        }
+        if ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
+            $tenant->refresh();
+        }
+
+        $canProvision = $this->provisioner->canApprove($tenant);
+        $provisionProgress = $this->provisioner->provisioningProgress($tenant);
+        $provisioningQueued = $this->provisioner->isProvisioningQueued($tenant);
+        $databaseReady = $tenant->isDatabaseProvisioned();
+        $statusNeedsFix = $databaseReady && in_array($tenant->status, ['failed', 'provisioning'], true);
+        $showProvisionPanel = $canProvision || $statusNeedsFix;
+
+        $queuedCredentials = $this->provisioner->pullQueuedProvisionCredentials($tenant->id);
+        if ($queuedCredentials !== null) {
+            session()->flash('tenant_db_credentials', $queuedCredentials['database'] ?? null);
+            session()->flash('success', 'Provisioning completed. Database and CRM credentials are ready.');
+        }
+
+        $dnsService = app(\App\Services\TenantDomainDnsService::class);
+        $dnsAutoResults = [];
+        if ($tenant->domains->contains(fn ($domain) => $dnsService->isPending($domain, $tenant))) {
+            $dnsAutoResults = $dnsService->autoProvisionPendingForTenant($tenant->fresh(['domains']));
+        }
+        $dnsPendingDomains = $tenant->fresh(['domains'])->domains->filter(
+            fn ($domain) => $dnsService->isPending($domain, $tenant)
+        );
+        $dnsAutoOk = collect($dnsAutoResults)->where('verified', true);
+        $dnsAutoFail = collect($dnsAutoResults)->where('verified', false);
+        $domainActivityLog = app(\App\Services\MasterActivityLogService::class)
+            ->recentForTenant($tenant->id);
+
+        return view('admin.tenants.show', compact(
+            'tenant',
+            'resolveUrl',
+            'subdomainCheckStats',
+            'plans',
+            'crmAccess',
+            'crmHost',
+            'crmFullUrl',
+            'dnsPendingDomains',
+            'dnsService',
+            'dnsAutoResults',
+            'dnsAutoOk',
+            'dnsAutoFail',
+            'domainActivityLog',
+            'canProvision',
+            'provisionProgress',
+            'provisioningQueued',
+            'planBillingMeta',
+            'databaseReady',
+            'statusNeedsFix',
+            'showProvisionPanel',
+        ));
+    }
+
+    public function reconcileProvisioning(Tenant $tenant): RedirectResponse
+    {
+        if (! $tenant->isDatabaseProvisioned()) {
+            return back()
+                ->with('error', 'Database is not fully provisioned yet. Use Retry provisioning above.')
+                ->withFragment('tenant-manage');
+        }
+
+        $tenant->update([
+            'status' => 'active',
+            'provision_error' => null,
+            'provisioning_stage' => 'completed',
+        ]);
+
+        $this->resolver->forgetHostCache($tenant);
+        $this->activityLog->domain(
+            'reconcile',
+            'ok',
+            'Company marked Active — database was already provisioned',
+            $tenant,
+            Auth::user()
+        );
+
+        return redirect()
+            ->route('admin.tenants.show', $tenant)
+            ->with('success', 'Company is now Active. Database and CRM login were already ready.')
+            ->withFragment('tenant-manage');
     }
 
     public function edit(Tenant $tenant): View
@@ -204,28 +307,168 @@ class TenantController extends Controller
             ->with('success', 'Company updated.');
     }
 
-    public function approve(Request $request, Tenant $tenant): RedirectResponse
+    public function updateManage(Request $request, Tenant $tenant): RedirectResponse
     {
-        try {
-            $dbCredentials = $this->provisioner->approve(
-                $tenant,
-                Auth::user(),
-                $request->boolean('with_data')
-            );
-        } catch (\Throwable $e) {
-            return back()->with('error', 'Provisioning failed: '.$e->getMessage());
+        $validated = $request->validate([
+            'status' => [
+                'required',
+                'in:'.implode(',', config('master.tenant_statuses', ['pending', 'provisioning', 'active', 'failed', 'suspended', 'rejected'])),
+            ],
+            'subscription_plan_id' => ['nullable', 'exists:subscription_plans,id'],
+            'subscription_status' => [
+                'nullable',
+                'in:'.implode(',', config('master.subscription_statuses', ['pending', 'trial', 'active', 'cancelled', 'expired', 'suspended'])),
+            ],
+            'subscription_billed_at' => ['nullable', 'date'],
+            'subscription_expires_at' => ['nullable', 'date'],
+            'renew_billing' => ['nullable', 'boolean'],
+        ]);
+
+        $plan = isset($validated['subscription_plan_id'])
+            ? SubscriptionPlan::query()->find($validated['subscription_plan_id'])
+            : null;
+
+        $billedInput = ! empty($validated['subscription_billed_at'])
+            ? Carbon::parse($validated['subscription_billed_at'])->startOfDay()
+            : null;
+
+        $expiresInput = ! empty($validated['subscription_expires_at'])
+            ? Carbon::parse($validated['subscription_expires_at'])->startOfDay()
+            : null;
+
+        [$expiresAt, $billedAt] = $this->subscriptions->resolveForManageSave(
+            $tenant,
+            $plan,
+            $billedInput,
+            $expiresInput,
+            $request->boolean('renew_billing'),
+        );
+
+        $newStatus = $validated['status'];
+        $subscriptionStatus = $validated['subscription_status'] ?? null;
+        if ($subscriptionStatus === '') {
+            $subscriptionStatus = null;
         }
 
-        $withData = $request->boolean('with_data');
-        $cloneNote = $withData
-            ? 'All data from the template database was copied into the new tenant database.'
-            : 'Database structure was cloned; reference data was seeded (no full data copy).';
+        $statusWarning = null;
+        if ($newStatus === 'active' && ! $tenant->isDatabaseProvisioned()) {
+            $newStatus = in_array($tenant->status, ['provisioning', 'pending', 'failed'], true)
+                ? $tenant->status
+                : 'provisioning';
+            $statusWarning = 'Company status was not changed to Active — finish database provisioning first (MySQL user + CRM login). Use Retry / Approve above, then save again.';
+        }
 
-        return $this->redirectAfterProvision(
-            back(),
-            'Company approved. '.$cloneNote,
-            $dbCredentials
+        if (in_array($newStatus, ['pending', 'rejected'], true) && $tenant->isDatabaseProvisioned()) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'status' => 'Database is already provisioned. Use Suspended or keep Active instead of '.$newStatus.'.',
+                ])
+                ->withFragment('tenant-manage');
+        }
+
+        $previousStatus = $tenant->status;
+
+        $tenant->update([
+            'status' => $newStatus,
+            'subscription_plan_id' => $validated['subscription_plan_id'] ?? null,
+            'subscription_status' => $subscriptionStatus,
+            'subscription_billed_at' => $billedAt,
+            'subscription_expires_at' => $expiresAt,
+        ]);
+
+        if ($previousStatus !== $newStatus) {
+            $this->resolver->forgetHostCache($tenant);
+        }
+
+        $this->activityLog->domain(
+            'manage',
+            'ok',
+            'Company status='.$newStatus.', subscription='.($subscriptionStatus ?? '—'),
+            $tenant,
+            Auth::user()
         );
+
+        $redirect = redirect()
+            ->route('admin.tenants.show', $tenant)
+            ->withFragment('tenant-manage');
+
+        if ($statusWarning !== null) {
+            return $redirect
+                ->with('warning', $statusWarning)
+                ->with('success', 'Subscription and plan saved. Company status unchanged until provisioning completes.');
+        }
+
+        return $redirect->with('success', 'Status and subscription saved.');
+    }
+
+    public function approve(Request $request, Tenant $tenant): RedirectResponse
+    {
+        if ($this->provisioner->isProvisioningQueued($tenant)) {
+            return back()->with('warning', 'Provisioning is already queued or running. Refresh this page for live status.');
+        }
+
+        $runSync = $request->boolean('run_sync')
+            && config('master.tenant_provision_sync_local', false);
+
+        try {
+            if ($runSync) {
+                app(\App\Services\ProvisionTenantQueueService::class)->prepareFreshDispatch($tenant->id);
+
+                $result = $this->provisioner->approve($tenant->fresh(), Auth::user());
+
+                return $this->redirectAfterProvision(
+                    redirect()->route('admin.tenants.show', $tenant)->withFragment('tenant-manage'),
+                    'Database provisioned (structure + MySQL user + CRM login).',
+                    $result
+                );
+            }
+
+            $this->provisioner->queueProvisioning($tenant, Auth::user());
+        } catch (\Throwable $e) {
+            return back()
+                ->with('error', 'Provisioning failed: '.$e->getMessage())
+                ->withFragment('tenant-manage');
+        }
+
+        return back()
+            ->with('success', 'Provisioning queued. This page updates automatically when it finishes.')
+            ->withFragment('tenant-manage');
+    }
+
+    public function provisioningStatus(Tenant $tenant): \Illuminate\Http\JsonResponse
+    {
+        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $provisionQueue->reconcileProvisioningState($tenant->fresh());
+        $tenant->refresh();
+
+        $progress = $this->provisioner->provisioningProgress($tenant);
+        $errorMessage = $progress['error_message'] ?? $tenant->provision_error;
+        $statusLabels = config('master.tenant_status_labels', []);
+        $companyStatus = $tenant->status;
+        $companyStatusLabel = $statusLabels[$companyStatus] ?? ucfirst($companyStatus);
+
+        if ($errorMessage) {
+            $companyStatus = 'failed';
+            $companyStatusLabel = $statusLabels['failed'] ?? 'Failed';
+        } elseif ($progress['is_queued'] ?? false) {
+            $companyStatus = 'provisioning';
+            $companyStatusLabel = 'Provisioning — '.($progress['stage_label'] ?? '');
+        }
+
+        return response()->json([
+            'status' => $tenant->status,
+            'company_status' => $companyStatus,
+            'company_status_label' => $companyStatusLabel,
+            'can_set_active' => $tenant->isDatabaseProvisioned(),
+            'stage' => $progress['stage'],
+            'stage_label' => $progress['stage_label'],
+            'provision_error' => $errorMessage,
+            'progress' => $progress,
+            'done' => $tenant->status === 'active' && $tenant->isDatabaseProvisioned(),
+            'failed' => $companyStatus === 'failed' || (($progress['is_stalled'] ?? false) && $errorMessage),
+            'stalled' => $progress['is_stalled'] ?? false,
+        ]);
     }
 
     public function reject(Request $request, Tenant $tenant): RedirectResponse
@@ -322,6 +565,99 @@ class TenantController extends Controller
         ], $run['ok'] ? 200 : 500);
     }
 
+    public function regenerateDatabaseUser(Tenant $tenant): RedirectResponse
+    {
+        if ($tenant->database_name === null || $tenant->database_name === '') {
+            return back()->with('error', 'Company has no database name.');
+        }
+
+        try {
+            $credentials = app(TenantDatabaseUserService::class)->provisionForTenant($tenant->fresh());
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Database user failed: '.$e->getMessage());
+        }
+
+        if (! $tenant->fresh()->database_host) {
+            $tenant->update([
+                'database_host' => \App\Support\TenantDbAdmin::host(),
+                'database_port' => \App\Support\TenantDbAdmin::port(),
+            ]);
+        }
+
+        return $this->redirectAfterProvision(
+            back()->withFragment('tenant-database-credentials'),
+            'Database user created or reset. Password saved — view anytime below.',
+            $credentials
+        );
+    }
+
+    public function updateDatabasePassword(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'max:128'],
+        ]);
+
+        if ($tenant->database_name === null || $tenant->database_name === '') {
+            return back()->with('error', 'Company has no database name.');
+        }
+
+        if (! $tenant->hasDatabaseUsername()) {
+            return back()->with('error', 'Create the database user first.');
+        }
+
+        try {
+            app(TenantDatabaseUserService::class)->updatePasswordForTenant($tenant, $validated['password']);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'MySQL password update failed: '.$e->getMessage());
+        }
+
+        return back()
+            ->with('success', 'MySQL password updated on the server and saved on this company record.')
+            ->withFragment('tenant-database-credentials');
+    }
+
+    public function regenerateCrmAdminPassword(Tenant $tenant): RedirectResponse
+    {
+        if (! $tenant->isDatabaseProvisioned() && $tenant->database_name === null) {
+            return back()->with('error', 'Provision the company database before setting CRM login.');
+        }
+
+        try {
+            $crm = app(TenantDefaultUserService::class)->setCrmAdminPassword($tenant, null);
+        } catch (\Throwable $e) {
+            try {
+                $crm = app(TenantDefaultUserService::class)->provisionDefaultAdmin($tenant->fresh());
+            } catch (\Throwable $inner) {
+                return back()->with('error', 'CRM password failed: '.$inner->getMessage());
+            }
+        }
+
+        return back()
+            ->with('success', "CRM login password regenerated for {$crm['email']}. Saved encrypted — view anytime in CRM login below.")
+            ->withFragment('tenant-crm-login');
+    }
+
+    public function updateCrmAdminPassword(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'max:128'],
+        ]);
+
+        if ($tenant->database_name === null || $tenant->database_name === '') {
+            return back()->with('error', 'Company database is not provisioned.');
+        }
+
+        try {
+            $crm = app(TenantDefaultUserService::class)->setCrmAdminPassword($tenant, $validated['password']);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'CRM password update failed: '.$e->getMessage());
+        }
+
+        return back()
+            ->with('success', "CRM login password updated for {$crm['email']} (tenant users table + master record).")
+            ->withFragment('tenant-crm-login');
+    }
+
     public function migrateDatabases(Request $request): RedirectResponse
     {
         $request->validate([
@@ -409,7 +745,6 @@ class TenantController extends Controller
             'custom_domain' => ['nullable', 'string', 'max:255', 'regex:'.TenantDomainHost::CUSTOM_DOMAIN_REGEX],
             'registration_notes' => ['nullable', 'string', 'max:2000'],
             'approve_immediately' => ['nullable', 'boolean'],
-            'with_data' => ['nullable', 'boolean'],
         ];
 
         if ($isUpdate) {

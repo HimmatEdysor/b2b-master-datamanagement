@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Tenant;
-use Illuminate\Support\Facades\Process;
+use App\Support\TenantDbAdmin;
 use Illuminate\Support\Str;
 
 class TenantDatabaseUserService
@@ -53,6 +53,62 @@ class TenantDatabaseUserService
         ];
     }
 
+    /**
+     * Change password for an existing dedicated MySQL user (ALTER USER) and store on tenant.
+     *
+     * @return array{username: string, password: string}
+     */
+    public function updatePasswordForTenant(Tenant $tenant, string $password): array
+    {
+        $databaseName = $tenant->database_name;
+
+        if ($databaseName === null || $databaseName === '') {
+            throw new \InvalidArgumentException('Tenant has no database name.');
+        }
+
+        $username = $tenant->database_username ?: $this->deriveUsername($databaseName);
+
+        $this->runAdminSql($this->buildPasswordUpdateSql($username, $password));
+
+        $tenant->update([
+            'database_username' => $username,
+            'database_password' => $password,
+        ]);
+
+        $this->activityLog->database(
+            'update_db_password',
+            'ok',
+            "MySQL password updated for user {$username}",
+            $tenant,
+            null,
+            ['username' => $username, 'database' => $databaseName]
+        );
+
+        return [
+            'username' => $username,
+            'password' => $password,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function buildPasswordUpdateSql(string $username, string $password): array
+    {
+        $escapedUser = $this->escapeSqlString($username);
+        $escapedPass = $this->escapeSqlString($password);
+        $statements = [];
+
+        foreach ($this->userHosts() as $host) {
+            $escapedHost = $this->escapeSqlString($host);
+            $statements[] = "ALTER USER '{$escapedUser}'@'{$escapedHost}' IDENTIFIED BY '{$escapedPass}'";
+        }
+
+        $statements[] = 'FLUSH PRIVILEGES';
+
+        return $statements;
+    }
+
     public function deriveUsername(string $databaseName): string
     {
         return Str::limit($databaseName, self::USERNAME_MAX_LENGTH, '');
@@ -70,14 +126,23 @@ class TenantDatabaseUserService
 
         foreach ($this->userHosts() as $host) {
             $escapedHost = $this->escapeSqlString($host);
-            $statements[] = "CREATE USER IF NOT EXISTS '{$escapedUser}'@'{$escapedHost}' IDENTIFIED BY '{$escapedPass}'";
-            $statements[] = "ALTER USER '{$escapedUser}'@'{$escapedHost}' IDENTIFIED BY '{$escapedPass}'";
+            // Drop + create so re-provision after a failed run resets password (MariaDB/MySQL).
+            $statements[] = "DROP USER IF EXISTS '{$escapedUser}'@'{$escapedHost}'";
+            $statements[] = "CREATE USER '{$escapedUser}'@'{$escapedHost}' IDENTIFIED BY '{$escapedPass}'";
             $statements[] = "GRANT ALL PRIVILEGES ON {$quotedDb}.* TO '{$escapedUser}'@'{$escapedHost}'";
         }
 
         $statements[] = 'FLUSH PRIVILEGES';
 
         return $statements;
+    }
+
+    /**
+     * @param  list<string>  $statements
+     */
+    public function statementsToSqlBatch(array $statements): string
+    {
+        return implode(";\n", $statements).';';
     }
 
     /**
@@ -94,28 +159,44 @@ class TenantDatabaseUserService
     }
 
     /**
+     * Run DDL via PDO (one statement at a time). Avoids mysql CLI batching / MariaDB syntax issues.
+     *
      * @param  list<string>  $statements
      */
     protected function runAdminSql(array $statements): void
     {
-        $host = config('master.tenant_db_host');
-        $port = config('master.tenant_db_port');
-        $user = config('master.tenant_db_username');
-        $pass = config('master.tenant_db_password');
-        $passArgs = ($pass !== '' && $pass !== null) ? ['-p'.$pass] : [];
+        TenantDbAdmin::assertCanProvision();
 
-        $result = Process::run([
-            'mysql',
-            '-h', $host,
-            '-P', (string) $port,
-            '-u', $user,
-            ...$passArgs,
-            '-e', implode("\n", $statements),
-        ]);
+        $pdo = $this->adminPdo();
 
-        if (! $result->successful()) {
-            throw new \RuntimeException(trim($result->errorOutput() ?: $result->output()));
+        foreach ($statements as $sql) {
+            $sql = rtrim(trim($sql), ';').';';
+
+            try {
+                $pdo->exec($sql);
+            } catch (\PDOException $e) {
+                throw new \RuntimeException("MySQL failed on:\n{$sql}\n\n".$e->getMessage(), 0, $e);
+            }
         }
+    }
+
+    protected function adminPdo(): \PDO
+    {
+        $dsn = sprintf(
+            'mysql:host=%s;port=%d;charset=utf8mb4',
+            TenantDbAdmin::host(),
+            TenantDbAdmin::port()
+        );
+
+        return new \PDO(
+            $dsn,
+            TenantDbAdmin::username(),
+            TenantDbAdmin::password(),
+            [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]
+        );
     }
 
     protected function escapeSqlString(string $value): string

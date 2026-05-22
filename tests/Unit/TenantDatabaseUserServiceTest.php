@@ -32,10 +32,27 @@ class TenantDatabaseUserServiceTest extends TestCase
         $service = $this->app->make(TenantDatabaseUserService::class);
         config(['master.tenant_db_user_hosts' => ['%', 'localhost']]);
 
-        $sql = implode("\n", $service->buildProvisionSql('b2b_tenant_x', "pa'ss\\word", 'b2b_tenant_x'));
+        $statements = $service->buildProvisionSql('b2b_tenant_x', "pa'ss\\word", 'b2b_tenant_x');
+        $sql = $service->statementsToSqlBatch($statements);
 
-        $this->assertStringContainsString("IDENTIFIED BY 'pa''ss\\\\word'", $sql);
+        $this->assertStringContainsString("CREATE USER 'b2b_tenant_x'@'%' IDENTIFIED BY 'pa''ss\\\\word'", $sql);
         $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `b2b_tenant_x`.* TO 'b2b_tenant_x'@'localhost'", $sql);
+        $this->assertStringContainsString("CREATE USER 'b2b_tenant_x'@'localhost'", $sql);
+        $this->assertStringEndsWith(';', $sql);
+        $this->assertMatchesRegularExpression('/CREATE USER[^;]+;\s*\nGRANT/', $sql);
+    }
+
+    #[Test]
+    public function build_password_update_sql_alters_user_and_flush(): void
+    {
+        $service = $this->app->make(TenantDatabaseUserService::class);
+        config(['master.tenant_db_user_hosts' => ['%']]);
+
+        $statements = $service->buildPasswordUpdateSql('b2b_tenant_x', 'new-secret');
+        $sql = $service->statementsToSqlBatch($statements);
+
+        $this->assertStringContainsString("ALTER USER 'b2b_tenant_x'@'%' IDENTIFIED BY 'new-secret'", $sql);
         $this->assertStringContainsString('FLUSH PRIVILEGES', $sql);
+        $this->assertStringNotContainsString('CREATE USER', $sql);
     }
 }

@@ -50,6 +50,20 @@ return [
     'tenant_db_password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
 
     /*
+    | Seconds for mysqldump/mysql when cloning template → tenant DB (Horizon timeout uses this too).
+    */
+    'tenant_db_clone_timeout' => (int) env('TENANT_DB_CLONE_TIMEOUT', 3000),
+
+    /*
+    | Local dev: allow "Provision now" (sync, ~15–40s for schema-only) without Horizon.
+    | Production should use the queue (TENANT_PROVISION_SYNC_LOCAL=false).
+    */
+    'tenant_provision_sync_local' => filter_var(
+        env('TENANT_PROVISION_SYNC_LOCAL', env('APP_ENV') === 'local'),
+        FILTER_VALIDATE_BOOL
+    ),
+
+    /*
     | MySQL hosts for per-tenant DB users (CREATE USER … @host). Use % for remote/TCP;
     | include localhost when CRM connects via socket on the same server.
     */
@@ -94,6 +108,10 @@ return [
     */
     'tenant_crm_bulk_migrate_time_limit' => (int) env('TENANT_CRM_BULK_MIGRATE_TIME_LIMIT', 0),
 
+    /*
+    | Only these tables get row data copied from the template DB after schema clone.
+    | All other tables stay empty (no full mysqldump data). Add/remove tables here as needed.
+    */
     'tenant_seed_tables' => [
         'permissions',
         'roles',
@@ -106,6 +124,16 @@ return [
         'courses',
         'service_names',
     ],
+
+    /*
+    | Template user row(s) copied by id after seed (e.g. bootstrap admin before default CRM user is created).
+    */
+    'tenant_seed_user_ids' => [1],
+
+    /*
+    | universities columns cleared when seeding from template (tenant-specific URM contacts).
+    */
+    'tenant_universities_blank_columns' => ['urm_name', 'urm_contact_no', 'urm_email'],
 
     /*
     | web_settings columns copied from template (user_id null row only). No API keys, mail, etc.
@@ -162,5 +190,42 @@ return [
         'expired' => 'Expired',
         'suspended' => 'Suspended',
     ],
+
+    /*
+    | Subscription statuses that allow CRM login on tenant subdomains.
+    */
+    'crm_allowed_subscription_statuses' => ['active', 'trial'],
+
+    /*
+    | Plan slugs that never get subscription_expires_at (use interval "none" on the plan too).
+    */
+    'subscription_free_plan_slugs' => ['free'],
+
+    /*
+    | Custom domain DNS/SSL hints in admin + automatic A records for subdomains.
+    */
+    'custom_domain_server_ip' => env('CUSTOM_DOMAIN_SERVER_IP'),
+    'custom_domain_cname_target' => env('CUSTOM_DOMAIN_CNAME_TARGET'),
+    'custom_domain_ssl_email' => env('CUSTOM_DOMAIN_SSL_EMAIL'),
+    'custom_domain_ssl_webroot' => env('CUSTOM_DOMAIN_SSL_WEBROOT', '/var/www/html'),
+
+    /*
+    | DNS auto-provision: cloudflare (default), route53, or manual.
+    | Cloudflare: CLOUDFLARE_API_TOKEN in .env + zone ID in Web settings or .env.
+    */
+    'dns_provider' => env('DNS_PROVIDER', 'cloudflare'),
+    'dns_auto_link_subdomains' => env('DNS_AUTO_LINK_SUBDOMAINS', true),
+    'cloudflare_api_token' => env('CLOUDFLARE_API_TOKEN'),
+    'dns_cloudflare_zone_id' => env('DNS_CLOUDFLARE_ZONE_ID'),
+    'dns_cloudflare_base_domain' => env('DNS_CLOUDFLARE_BASE_DOMAIN'),
+    'dns_cloudflare_proxied' => filter_var(env('DNS_CLOUDFLARE_PROXIED', false), FILTER_VALIDATE_BOOL),
+    'dns_route53_hosted_zone_id' => env('DNS_ROUTE53_HOSTED_ZONE_ID'),
+    'dns_route53_base_domain' => env('DNS_ROUTE53_BASE_DOMAIN'),
+    'dns_route53_region' => env('DNS_ROUTE53_REGION'),
+
+    /*
+    | Queue for tenant DB provisioning (run: php artisan queue:work).
+    */
+    'tenant_provision_queue' => env('TENANT_PROVISION_QUEUE', 'provisioning'),
 
 ];

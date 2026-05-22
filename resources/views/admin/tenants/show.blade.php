@@ -1,11 +1,5 @@
 @extends('layouts.admin')
 
-@php
-    use App\Support\TenantUrl;
-    $crmHost = TenantUrl::hostForTenant($tenant);
-    $crmFullUrl = TenantUrl::urlForTenant($tenant);
-@endphp
-
 @section('title', $tenant->name)
 @section('page-title', $tenant->name)
 
@@ -18,7 +12,7 @@
     @php($dbCreds = session('tenant_db_credentials'))
     <div class="alert alert-success tenant-db-credentials-alert" role="status">
         <strong>Dedicated database user created.</strong>
-        Save these credentials now — the password is stored encrypted and is only shown here once.
+        Password is stored encrypted — you can also view and change it anytime under <strong>Database (CRM)</strong> below.
         <dl class="tenant-db-credentials-list">
             <dt>Username</dt>
             <dd><code>{{ $dbCreds['username'] }}</code> @include('admin.partials.copy-btn', ['text' => $dbCreds['username'], 'title' => 'Copy username'])</dd>
@@ -28,52 +22,60 @@
     </div>
 @endif
 <div class="tenant-show">
-    <div class="page-toolbar tenant-show-toolbar">
-        <div>
-            <p class="page-lead">
-                <span class="badge badge-{{ $tenant->status }}">{{ ucfirst($tenant->status) }}</span>
-                <code class="code-pill" style="margin-left:8px">{{ $tenant->slug }}</code>
-            </p>
-        </div>
-        <div class="tenant-show-actions">
-            <a href="{{ route('admin.tenants.index') }}" class="btn btn-outline btn-sm">← All companies</a>
-            <a href="{{ route('admin.tenants.edit', $tenant) }}" class="btn btn-primary btn-sm">Edit</a>
-            @if($tenant->isPending())
-                <form method="POST" action="{{ route('admin.tenants.reject', $tenant) }}" class="inline-form" onsubmit="return confirm('Reject this registration?');">
-                    @csrf
-                    <button type="submit" class="btn btn-outline btn-sm">Reject</button>
-                </form>
-            @elseif($tenant->status === 'active')
-                <form method="POST" action="{{ route('admin.tenants.suspend', $tenant) }}" class="inline-form" onsubmit="return confirm('Suspend this company?');">
-                    @csrf
-                    <button type="submit" class="btn btn-outline btn-sm">Suspend</button>
-                </form>
-            @elseif(in_array($tenant->status, ['suspended', 'failed'], true))
-                <form method="POST" action="{{ route('admin.tenants.reactivate', $tenant) }}" class="inline-form">
-                    @csrf
-                    <button type="submit" class="btn btn-primary btn-sm">Reactivate</button>
-                </form>
+    @include('admin.tenants._show-header')
+
+    @if(($dnsAutoOk ?? collect())->isNotEmpty() || ($dnsAutoFail ?? collect())->isNotEmpty())
+        @if($dnsAutoOk->isNotEmpty())
+            <div class="alert alert-success dns-auto-alert span-full" role="status">
+                <strong>DNS auto-linked</strong>
+                @foreach($dnsAutoOk as $row)
+                    <code>{{ \App\Support\TenantUrl::normalizeHostForEnvironment($row['host'], $tenant->slug) }}</code>@if(! $loop->last), @endif
+                @endforeach
+                @if($dnsService->autoProvisionEnabled())
+                    via {{ $dnsService->dnsProviderLabel() }} API.
+                @endif
+                Complete SSL in <strong>Manage company → Domains</strong> if needed.
+            </div>
+        @endif
+        @if($dnsAutoFail->isNotEmpty())
+            <div class="alert alert-warning dns-pending-alert span-full" role="status">
+                <strong>DNS auto-link failed</strong>
+                <ul class="dns-auto-fail-list">
+                    @foreach($dnsAutoFail as $row)
+                        <li><code>{{ $row['host'] }}</code> — {{ $row['message'] }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+    @endif
+    @if(isset($dnsPendingDomains) && $dnsPendingDomains->isNotEmpty())
+        <div class="alert alert-warning dns-pending-alert span-full" role="status">
+            <strong>Domain setup incomplete</strong> for
+            @foreach($dnsPendingDomains as $domain)
+                <code>{{ \App\Support\TenantUrl::normalizeHostForEnvironment($domain->host, $tenant->slug) }}</code>@if(! $loop->last), @endif
+            @endforeach.
+            @if($dnsService->autoProvisionEnabled())
+                Cloudflare/Route53 is configured — use <strong>Add DNS</strong> below or fix API errors above.
+            @else
+                In <strong>Manage company</strong>: <strong>DNS Update</strong> → <strong>SSL Apply</strong> → open CRM.
+            @endif
+            @if($dnsService->serverIp())
+                Server IP: <code>{{ $dnsService->serverIp() }}</code>.
+            @elseif(master_can('settings.view'))
+                Set CRM server IP in <a href="{{ route('admin.settings.edit') }}">Web settings</a>.
             @endif
         </div>
-    </div>
-
-    @if($tenant->isPending())
-    <div class="card admin-form-card tenant-provision-card" style="margin-bottom: 1.25rem;">
-        <h2 class="tenant-detail-heading" style="margin-bottom: 0.75rem;">Provision tenant database</h2>
-        <p class="page-lead" style="margin-bottom: 1rem;">
-            Clones from template <code>{{ config('master.template_database') }}</code> into
-            <code>{{ $tenant->database_name }}</code>. Choose whether to copy structure only or all data.
-        </p>
-        <form method="POST" action="{{ route('admin.tenants.approve', $tenant) }}" class="admin-form"
-              data-clone-db-prompt id="tenantApproveForm">
-            @csrf
-            @include('admin.tenants._clone-database-options', ['withDataChecked' => old('with_data')])
-            <div class="form-actions" style="margin-top: 1rem;">
-                <button type="submit" class="btn btn-primary">Approve & provision database</button>
-            </div>
-        </form>
-    </div>
     @endif
+
+    @include('admin.tenants._manage-card', [
+        'plans' => $plans ?? collect(),
+        'planBillingMeta' => $planBillingMeta ?? collect(),
+        'canProvision' => $canProvision ?? false,
+        'provisionProgress' => $provisionProgress ?? [],
+        'provisioningQueued' => $provisioningQueued ?? false,
+        'dnsService' => $dnsService ?? null,
+        'domainActivityLog' => $domainActivityLog ?? [],
+    ])
 
     <div class="tenant-detail-grid">
         {{-- Overview --}}
@@ -120,7 +122,6 @@
                     </td>
                 </tr>
                 @endif
-                @include('admin.tenants._detail-row', ['label' => 'Status', 'value' => ucfirst($tenant->status)])
                 @include('admin.tenants._detail-row', ['label' => 'Registered', 'value' => $tenant->created_at?->format('d M Y, H:i')])
                 @include('admin.tenants._detail-row', ['label' => 'Last updated', 'value' => $tenant->updated_at?->format('d M Y, H:i')])
             </table>
@@ -165,19 +166,6 @@
             </table>
         </div>
 
-        {{-- Subscription --}}
-        <div class="card tenant-detail-card">
-            <h2 class="tenant-detail-heading">Subscription</h2>
-            <table class="detail-table">
-                @include('admin.tenants._detail-row', ['label' => 'Plan', 'value' => $tenant->subscriptionPlan?->name])
-                @include('admin.tenants._detail-row', ['label' => 'Subscription status', 'value' => $tenant->subscription_status ? ucfirst($tenant->subscription_status) : null])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Expires',
-                    'value' => $tenant->subscription_expires_at?->format('d M Y'),
-                ])
-            </table>
-        </div>
-
         {{-- Branding --}}
         <div class="card tenant-detail-card tenant-detail-card-branding">
             <h2 class="tenant-detail-heading">Branding</h2>
@@ -215,68 +203,10 @@
             @endif
         </div>
 
-        {{-- Domains --}}
-        <div class="card tenant-detail-card span-full">
-            <h2 class="tenant-detail-heading">Domains & CRM URLs</h2>
-            @include('admin.tenants._domains-manage')
-        </div>
-
         {{-- Database --}}
-        <div class="card tenant-detail-card">
+        <div class="card tenant-detail-card span-full">
             <h2 class="tenant-detail-heading">Database (CRM)</h2>
-            <table class="detail-table">
-                @include('admin.tenants._detail-row', ['label' => 'Database name', 'value' => $tenant->database_name])
-                @include('admin.tenants._detail-row', ['label' => 'Host', 'value' => $tenant->database_host])
-                @include('admin.tenants._detail-row', ['label' => 'Port', 'value' => $tenant->database_port])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Username',
-                    'value' => $tenant->database_username
-                        ?: ($tenant->isActive() ? null : 'Created on approval (same as database name)'),
-                ])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Password',
-                    'value' => $tenant->database_password
-                        ? 'Stored encrypted (shown once after approval)'
-                        : ($tenant->isActive() ? null : 'Generated on approval'),
-                ])
-                @include('admin.tenants._detail-row', ['label' => 'S3 folder', 'value' => $tenant->s3_folder ?: ($tenant->isActive() ? null : $tenant->slug)])
-            </table>
-        </div>
-
-        {{-- Provisioning & approval --}}
-        <div class="card tenant-detail-card">
-            <h2 class="tenant-detail-heading">Provisioning & approval</h2>
-            <table class="detail-table">
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Approved at',
-                    'value' => $tenant->approved_at?->format('d M Y, H:i'),
-                ])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Approved by',
-                    'value' => $tenant->approver?->name ?? $tenant->approver?->email,
-                ])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Rejected at',
-                    'value' => $tenant->rejected_at?->format('d M Y, H:i'),
-                ])
-                @include('admin.tenants._detail-row', ['label' => 'Migration status', 'value' => $tenant->migration_status])
-                @include('admin.tenants._detail-row', [
-                    'label' => 'Last migration',
-                    'value' => $tenant->last_migration_at?->format('d M Y, H:i'),
-                ])
-            </table>
-            @if($tenant->provision_error)
-                <div class="detail-alert detail-alert-error">
-                    <strong>Provision error</strong>
-                    <pre class="detail-pre">{{ $tenant->provision_error }}</pre>
-                </div>
-            @endif
-            @if($tenant->migration_error)
-                <div class="detail-alert detail-alert-error">
-                    <strong>Migration error</strong>
-                    <pre class="detail-pre">{{ $tenant->migration_error }}</pre>
-                </div>
-            @endif
+            @include('admin.tenants._database-credentials', ['canProvision' => $canProvision ?? false])
         </div>
 
         {{-- Notes --}}
@@ -288,6 +218,44 @@
                 <p class="detail-empty-block">No notes provided.</p>
             @endif
         </div>
+
+        @if(isset($subdomainCheckStats) && $subdomainCheckStats->isNotEmpty())
+        <div class="card tenant-detail-card span-full">
+            <h2 class="tenant-detail-heading">Subdomain resolve checks</h2>
+            <p class="form-hint" style="margin-top:0">
+                How many times CRM requested this company via <code>/api/v1/tenant/resolve</code>.
+                <a href="{{ route('admin.subdomain-checks.index', ['q' => $tenant->slug]) }}">View all logs</a>
+            </p>
+            <div class="table-scroll">
+                <table class="detail-table">
+                    <thead>
+                        <tr>
+                            <th>Host</th>
+                            <th>Total checks</th>
+                            <th>Allowed</th>
+                            <th>Denied</th>
+                            <th>Last checked</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($subdomainCheckStats as $stat)
+                            <tr>
+                                <td>
+                                    <a href="{{ route('admin.subdomain-checks.show', ['host' => $stat->host]) }}">
+                                        <code>{{ $stat->host }}</code>
+                                    </a>
+                                </td>
+                                <td><strong>{{ number_format($stat->check_count) }}</strong></td>
+                                <td>{{ number_format($stat->allowed_count) }}</td>
+                                <td>{{ number_format($stat->denied_count + $stat->not_found_count) }}</td>
+                                <td>{{ $stat->last_checked_at?->format('d M Y H:i:s') ?? '—' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @endif
 
         @if($resolveUrl)
         <div class="card tenant-detail-card span-full">
@@ -337,5 +305,9 @@
 
 @push('scripts')
     <script src="{{ asset('js/copy-to-clipboard.js') }}"></script>
+    @if($provisioningQueued ?? false)
+        <script src="{{ asset('js/tenant-provision-poll.js') }}"></script>
+    @endif
+    <script src="{{ asset('js/tenant-manage-subscription.js') }}"></script>
 @endpush
 @endsection

@@ -1,0 +1,168 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\MasterSetting;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
+
+class MasterSettingsService
+{
+    public const CACHE_KEY = 'master_settings.all';
+
+    public function applyToConfig(): void
+    {
+        if (! Schema::hasTable('master_settings')) {
+            return;
+        }
+
+        foreach ($this->storedMap() as $key => $raw) {
+            $field = $this->fieldDefinition($key);
+            if ($field === null || $raw === null || $raw === '') {
+                continue;
+            }
+
+            $value = $this->castStored($raw, $field['type']);
+            $configKey = 'master.'.$field['config'];
+            config([$configKey => $value]);
+        }
+    }
+
+    /**
+     * @return array<string, array{definition: array, value: mixed, source: string, env_fallback: mixed}>
+     */
+    public function formState(): array
+    {
+        $stored = $this->storedMap();
+        $state = [];
+
+        foreach ($this->fields() as $key => $field) {
+            $configValue = $this->configValue($field['config']);
+            $hasStored = array_key_exists($key, $stored) && $stored[$key] !== null && $stored[$key] !== '';
+
+            $state[$key] = [
+                'definition' => $field,
+                'value' => $hasStored ? $this->castStored($stored[$key], $field['type']) : $configValue,
+                'source' => $hasStored ? 'database' : 'env',
+                'env_fallback' => $configValue,
+            ];
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    public function save(array $input): void
+    {
+        foreach ($this->fields() as $key => $field) {
+            if (! array_key_exists($key, $input)) {
+                continue;
+            }
+
+            $value = $input[$key];
+
+            if ($field['type'] === 'password') {
+                if ($value === null || $value === '') {
+                    continue;
+                }
+            }
+
+            if ($field['type'] === 'boolean') {
+                $value = filter_var($value, FILTER_VALIDATE_BOOL) ? '1' : '0';
+            } elseif ($field['type'] === 'csv') {
+                $value = $this->normalizeCsv($value);
+            } else {
+                $value = is_string($value) ? trim($value) : (string) $value;
+            }
+
+            if ($value === '' && $field['type'] !== 'password') {
+                MasterSetting::query()->where('key', $key)->delete();
+
+                continue;
+            }
+
+            MasterSetting::query()->updateOrCreate(
+                ['key' => $key],
+                ['value' => $value]
+            );
+        }
+
+        $this->clearCache();
+        $this->applyToConfig();
+    }
+
+    public function clearCache(): void
+    {
+        Cache::forget(self::CACHE_KEY);
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    protected function storedMap(): array
+    {
+        return Cache::rememberForever(self::CACHE_KEY, function () {
+            return MasterSetting::query()
+                ->pluck('value', 'key')
+                ->all();
+        });
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function fields(): array
+    {
+        return config('master_settings.fields', []);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function sections(): array
+    {
+        return config('master_settings.sections', []);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function envOnlyKeys(): array
+    {
+        return config('master_settings.env_only_keys', []);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function fieldDefinition(string $key): ?array
+    {
+        return $this->fields()[$key] ?? null;
+    }
+
+    protected function configValue(string $configKey): mixed
+    {
+        return config('master.'.$configKey);
+    }
+
+    protected function castStored(string $raw, string $type): mixed
+    {
+        return match ($type) {
+            'boolean' => $raw === '1' || $raw === 'true',
+            'csv' => array_values(array_filter(array_map('trim', explode(',', $raw)))),
+            default => $raw,
+        };
+    }
+
+    protected function normalizeCsv(mixed $value): string
+    {
+        if (is_array($value)) {
+            return implode(',', array_values(array_filter(array_map('trim', $value))));
+        }
+
+        return implode(',', array_values(array_filter(array_map('trim', explode(',', (string) $value)))));
+    }
+}

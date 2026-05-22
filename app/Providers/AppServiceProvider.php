@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\Page;
+use App\Services\MasterSettingsService;
+use App\Support\TenantCrmPath;
 use App\Support\TenantUrl;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\View;
@@ -23,6 +25,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        app(MasterSettingsService::class)->applyToConfig();
+
+        if (! config('master.tenant_crm_path')) {
+            config(['master.tenant_crm_path' => TenantCrmPath::resolve()]);
+        }
+
         Paginator::useBootstrapFive();
 
         View::composer('layouts.website', function ($view) {

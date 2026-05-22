@@ -62,9 +62,11 @@
         <div class="form-group">
             <label for="plan_interval">Billing interval <span class="required">*</span></label>
             <select id="plan_interval" name="interval" class="form-control" required>
+                <option value="none" @selected(old('interval', $plan?->interval ?? '') === 'none')>None (free — no expiry)</option>
                 <option value="monthly" @selected(old('interval', $plan?->interval ?? 'monthly') === 'monthly')>Monthly</option>
                 <option value="yearly" @selected(old('interval', $plan?->interval ?? '') === 'yearly')>Yearly</option>
             </select>
+            <p class="form-hint">Use <strong>None</strong> for free plans. Paid plans use monthly/yearly to calculate company expiry from last billing date.</p>
             @error('interval')<p class="field-error">{{ $message }}</p>@enderror
         </div>
 
@@ -123,10 +125,10 @@
             @if($plan->is_featured)<span class="plan-preview-badge">Popular</span>@endif
             <strong>{{ $plan->name }}</strong>
             <span class="plan-preview-price">
-                @if($plan->price > 0)
-                    {{ $plan->currency }} {{ number_format($plan->price, 0) }}/{{ $plan->interval }}
+                @if($plan->interval === 'none' || $plan->price <= 0)
+                    Free — no expiry
                 @else
-                    Free
+                    {{ $plan->currency }} {{ number_format($plan->price, 0) }}/{{ $plan->interval }}
                 @endif
             </span>
             @if($plan->description)

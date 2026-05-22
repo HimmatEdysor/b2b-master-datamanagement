@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Admin\ActivityLogController;
+use App\Http\Controllers\Admin\SubdomainCheckLogController;
 use App\Http\Controllers\Admin\BlogPostController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\MasterSettingsController;
 use App\Http\Controllers\Admin\EditorImageUploadController;
 use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\PermissionController;
@@ -46,12 +48,39 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
 
     Route::middleware('permission:logs.view,tenants.view')->group(function () {
         Route::get('logs', [ActivityLogController::class, 'index'])->name('logs.index');
+        Route::get('logs/subdomain-checks', [SubdomainCheckLogController::class, 'index'])->name('subdomain-checks.index');
+        Route::get('logs/subdomain-checks/{host}', [SubdomainCheckLogController::class, 'show'])
+            ->where('host', '.*')
+            ->name('subdomain-checks.show');
+        Route::delete('logs/{channel}/{date}', [ActivityLogController::class, 'destroy'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')
+            ->name('logs.destroy');
     });
 
     Route::middleware('permission:tenants.view')->group(function () {
         Route::post('tenants/{tenant}/approve', [TenantController::class, 'approve'])
             ->middleware('permission:tenants.approve')
             ->name('tenants.approve');
+        Route::post('tenants/{tenant}/reconcile-provisioning', [TenantController::class, 'reconcileProvisioning'])
+            ->middleware('permission:tenants.approve')
+            ->name('tenants.reconcile-provisioning');
+        Route::get('tenants/{tenant}/provisioning-status', [TenantController::class, 'provisioningStatus'])
+            ->name('tenants.provisioning-status');
+        Route::post('tenants/{tenant}/database-user', [TenantController::class, 'regenerateDatabaseUser'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.database-user');
+        Route::put('tenants/{tenant}/database-password', [TenantController::class, 'updateDatabasePassword'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.database-password');
+        Route::put('tenants/{tenant}/manage', [TenantController::class, 'updateManage'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.manage');
+        Route::post('tenants/{tenant}/crm-admin-password', [TenantController::class, 'regenerateCrmAdminPassword'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.crm-admin-password');
+        Route::put('tenants/{tenant}/crm-admin-password', [TenantController::class, 'updateCrmAdminPassword'])
+            ->middleware('permission:tenants.edit')
+            ->name('tenants.crm-admin-password.update');
         Route::post('tenants/{tenant}/reject', [TenantController::class, 'reject'])
             ->middleware('permission:tenants.approve')
             ->name('tenants.reject');
@@ -76,6 +105,21 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::delete('tenants/{tenant}/domains/{domain}', [TenantDomainController::class, 'destroy'])
             ->middleware('permission:tenants.edit')
             ->name('tenants.domains.destroy');
+        Route::post('tenants/{tenant}/domains/dns-provision-all', [TenantDomainController::class, 'provisionAllDns'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.domains.dns-provision-all');
+        Route::post('tenants/{tenant}/domains/{domain}/dns-provision', [TenantDomainController::class, 'provisionDns'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.domains.dns-provision');
+        Route::post('tenants/{tenant}/domains/{domain}/dns-verify', [TenantDomainController::class, 'verifyDns'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.domains.dns-verify');
+        Route::post('tenants/{tenant}/domains/{domain}/ssl-check', [TenantDomainController::class, 'checkSsl'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.domains.ssl-check');
+        Route::post('tenants/{tenant}/domains/{domain}/ssl-complete', [TenantDomainController::class, 'markSslComplete'])
+            ->middleware('permission:tenants.edit,tenants.approve')
+            ->name('tenants.domains.ssl-complete');
         Route::post('tenants/migrate-databases', [TenantController::class, 'migrateDatabases'])
             ->middleware('permission:tenants.edit')
             ->name('tenants.migrate-databases');
@@ -121,6 +165,13 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             ->middleware('permission:permissions.edit')
             ->name('permissions.sync-config');
         Route::resource('permissions', PermissionController::class)->except(['show', 'destroy']);
+    });
+
+    Route::middleware('permission:settings.view')->group(function () {
+        Route::get('settings', [MasterSettingsController::class, 'edit'])->name('settings.edit');
+        Route::put('settings', [MasterSettingsController::class, 'update'])
+            ->middleware('permission:settings.edit')
+            ->name('settings.update');
     });
 });
 

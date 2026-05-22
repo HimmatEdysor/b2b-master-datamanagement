@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Tenant;
+use App\Support\TenantDbAdmin;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
@@ -10,10 +11,9 @@ class TenantCloneDatabaseCommand extends Command
 {
     protected $signature = 'tenant:clone-database
         {slug : Tenant slug}
-        {--from= : Source database (default: TENANT_TEMPLATE_DATABASE)}
-        {--data : Copy data, not schema only}';
+        {--from= : Source database (default: TENANT_TEMPLATE_DATABASE)}';
 
-    protected $description = 'Clone MySQL schema (and optionally data) from template DB into tenant database.';
+    protected $description = 'Clone MySQL schema only from template DB into tenant database (no row data). Run tenants:seed-reference-data to copy config tables.';
 
     public function handle(): int
     {
@@ -25,30 +25,25 @@ class TenantCloneDatabaseCommand extends Command
             return self::FAILURE;
         }
 
+        TenantDbAdmin::assertCanProvision();
+
         $from = $this->option('from') ?: config('master.template_database');
         $to = $tenant->database_name;
-        $host = config('master.tenant_db_host');
-        $port = config('master.tenant_db_port');
-        $user = config('master.tenant_db_username');
-        $pass = config('master.tenant_db_password');
+        $host = TenantDbAdmin::host();
+        $port = TenantDbAdmin::port();
+        $user = TenantDbAdmin::username();
+        $passArgs = TenantDbAdmin::mysqlPasswordArgs();
 
-        $withData = $this->option('data');
-        if (! $withData && $this->input->isInteractive()) {
-            $withData = $this->confirm(
-                "Copy ALL data from [{$from}] into [{$to}]? (No = structure only, then seed reference data separately)",
-                false
-            );
-        }
+        $timeout = (float) config('master.tenant_db_clone_timeout', 600);
+        $this->info("Cloning [{$from}] → [{$to}] (schema only, timeout {$timeout}s) …");
+        $this->line('Row data: run <info>php artisan tenants:seed-reference-data '.$tenant->slug.'</info> for tables in config/master.php → tenant_seed_tables');
 
-        $mode = $withData ? 'schema + all data' : 'schema only (no rows)';
-        $this->info("Cloning [{$from}] → [{$to}] ({$mode}) …");
-
-        $create = Process::run([
+        $create = Process::timeout($timeout)->run([
             'mysql',
             '-h', $host,
             '-P', (string) $port,
             '-u', $user,
-            ...($pass !== '' && $pass !== null ? ['-p'.$pass] : []),
+            ...$passArgs,
             '-e', "CREATE DATABASE IF NOT EXISTS `{$to}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
         ]);
 
@@ -58,14 +53,13 @@ class TenantCloneDatabaseCommand extends Command
             return self::FAILURE;
         }
 
-        $dumpFlags = $withData ? [] : ['--no-data'];
-        $dump = Process::run([
+        $dump = Process::timeout($timeout)->run([
             'mysqldump',
             '-h', $host,
             '-P', (string) $port,
             '-u', $user,
-            ...($pass !== '' && $pass !== null ? ['-p'.$pass] : []),
-            ...$dumpFlags,
+            ...$passArgs,
+            '--no-data',
             '--skip-routines', '--skip-triggers', '--single-transaction',
             $from,
         ]);
@@ -76,12 +70,12 @@ class TenantCloneDatabaseCommand extends Command
             return self::FAILURE;
         }
 
-        $import = Process::input($dump->output())->run([
+        $import = Process::timeout($timeout)->input($dump->output())->run([
             'mysql',
             '-h', $host,
             '-P', (string) $port,
             '-u', $user,
-            ...($pass !== '' && $pass !== null ? ['-p'.$pass] : []),
+            ...$passArgs,
             $to,
         ]);
 
@@ -92,7 +86,7 @@ class TenantCloneDatabaseCommand extends Command
         }
 
         $tenant->update(['status' => 'active', 'provision_error' => null]);
-        $this->info("Done. Database [{$to}] is ready ({$mode}).");
+        $this->info("Done. Database [{$to}] has schema only.");
 
         return self::SUCCESS;
     }

@@ -1,0 +1,335 @@
+/* Companies list — CRM-style toolbar, panels, table */
+
+.list-page-companies {
+    max-width: 100%;
+}
+
+.list-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.list-page-title {
+    margin: 0;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+}
+
+.list-page-count {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 1.1rem;
+}
+
+.list-page-lead {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 560px;
+}
+
+/* Toolbar (Counts / Filters / Migrations) */
+.list-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.list-tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.list-tool-btn:hover {
+    border-color: var(--accent);
+    background: #f8fafc;
+}
+
+.list-tool-btn.is-active {
+    border-color: var(--primary);
+    background: #f0f4f8;
+    box-shadow: 0 0 0 2px rgba(30, 58, 95, 0.1);
+}
+
+.list-tool-icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
+.list-tool-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 10px;
+    background: var(--primary);
+    color: #fff;
+}
+
+.list-tool-badge-muted {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.list-toolbar-spacer {
+    flex: 1;
+    min-width: 12px;
+}
+
+.list-toolbar-meta {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.list-toolbar-meta strong {
+    color: var(--text);
+}
+
+.list-toolbar-meta-muted {
+    font-size: 12px;
+}
+
+/* Collapsible panels */
+.list-panel {
+    display: none;
+    margin-bottom: 12px;
+}
+
+.list-panel.is-open {
+    display: block;
+}
+
+.list-panel-card {
+    margin-bottom: 0;
+}
+
+.count-chips-bar {
+    margin-bottom: 0;
+    padding: 4px 0;
+}
+
+.count-chip-provisioning .count-chip-value { color: #2563eb; }
+.count-chip-provisioning.active { border-color: #2563eb; background: #eff6ff; }
+
+.filter-panel-inner {
+    padding: 16px 18px;
+}
+
+.filter-form-grid {
+    display: grid;
+    grid-template-columns: 1fr minmax(160px, 220px) auto;
+    gap: 16px;
+    align-items: end;
+}
+
+@media (max-width: 900px) {
+    .filter-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.filter-form-grid .form-control {
+    max-width: none;
+}
+
+/* Migration panel */
+.migrate-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.migrate-panel-title {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.migrate-panel-desc {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    max-width: 640px;
+}
+
+.migrate-path-code {
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.migrate-panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.migrate-sync-form {
+    display: inline;
+}
+
+.migrate-empty-state {
+    padding: 20px;
+    text-align: center;
+    background: #f8fafc;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+}
+
+.migrate-empty-state.is-loaded {
+    padding: 0;
+    background: transparent;
+    border: none;
+    text-align: left;
+}
+
+.migrate-runner-card.list-panel-card {
+    padding: 18px 20px;
+}
+
+/* Table card */
+.list-table-card {
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.list-table-card table.data-table-tenants thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f1f5f9;
+    border-bottom: 2px solid var(--border);
+    padding: 12px 16px;
+}
+
+.list-table-card table.data-table-tenants tbody tr.data-table-row:hover {
+    background: #f8fafc;
+}
+
+.list-table-card table.data-table-tenants tbody td {
+    border-bottom: 1px solid #eef2f7;
+}
+
+.cell-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.cell-domain-text {
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    display: block;
+}
+
+.cell-link-sm {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.cell-link-sm:hover {
+    text-decoration: underline;
+}
+
+.code-pill-truncate {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.plan-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #eef2ff;
+    color: #3730a3;
+    border-radius: 999px;
+}
+
+.badge-status {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+}
+
+.table-empty-inner {
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.table-empty-title {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.table-empty-hint {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.table-footer-centered {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+}
+
+.table-footer-centered .pagination {
+    margin: 0;
+}
+
+/* Adjust column widths for readability */
+table.data-table-tenants .col-company { width: 24%; }
+table.data-table-tenants .col-slug { width: 12%; }
+table.data-table-tenants .col-db { width: 16%; }
+table.data-table-tenants .col-domain { width: 22%; }
+table.data-table-tenants .col-plan { width: 10%; }
+table.data-table-tenants .col-status { width: 10%; }
+table.data-table-tenants .col-actions { width: 88px; text-align: right; }
