@@ -50,8 +50,15 @@ return [
     'tenant_db_password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
 
     /*
+    | How to clone template → tenant schema (no row data; seed tables separately).
+    | pdo       — SHOW CREATE TABLE via PDO (default; works on AWS RDS without RELOAD/FLUSH)
+    | mysqldump — CLI mysqldump with --skip-lock-tables (legacy / local debugging)
+    */
+    'tenant_db_clone_method' => env('TENANT_DB_CLONE_METHOD', 'pdo'),
+
+    /*
     | Seconds for mysqldump/mysql when cloning template → tenant DB (Horizon timeout uses this too).
-    | Clone uses --single-transaction --skip-lock-tables --no-tablespaces (RDS-safe, no FLUSH TABLES).
+    | PDO clone ignores mysqldump; timeout still applies to queued provision jobs.
     */
     'tenant_db_clone_timeout' => (int) env('TENANT_DB_CLONE_TIMEOUT', 3000),
 

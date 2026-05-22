@@ -45,6 +45,14 @@ class TenantDbAdminTest extends TestCase
     }
 
     #[Test]
+    public function clone_method_accepts_mysqldump(): void
+    {
+        config(['master.tenant_db_clone_method' => 'mysqldump']);
+
+        $this->assertSame('mysqldump', TenantDbAdmin::cloneMethod());
+    }
+
+    #[Test]
     public function mysqldump_flags_are_rds_safe(): void
     {
         $flags = TenantDbAdmin::mysqldumpFlags(schemaOnly: true);

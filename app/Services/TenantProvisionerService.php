@@ -24,6 +24,7 @@ class TenantProvisionerService
         protected MasterActivityLogService $activityLog,
         protected TenantSubscriptionService $subscriptions,
         protected ProvisionTenantQueueService $provisionQueue,
+        protected TenantDatabaseSchemaCloneService $schemaClone,
     ) {}
 
     /**
@@ -507,11 +508,46 @@ class TenantProvisionerService
 
         $from = config('master.template_database');
         $to = $tenant->database_name;
-        $host = TenantDbAdmin::host();
-        $port = TenantDbAdmin::port();
-        $user = TenantDbAdmin::username();
-        $mysqlEnv = TenantDbAdmin::mysqlCliEnv();
 
+        if (TenantDbAdmin::cloneMethod() === 'mysqldump') {
+            $this->cloneDatabaseWithMysqldump($tenant, $from, $to);
+
+            return;
+        }
+
+        $this->cloneDatabaseWithPdo($tenant, $from, $to);
+    }
+
+    protected function cloneDatabaseWithPdo(Tenant $tenant, string $from, string $to): void
+    {
+        try {
+            $stats = $this->schemaClone->cloneSchema($from, $to);
+        } catch (\Throwable $e) {
+            $this->activityLog->database(
+                'clone_database',
+                'failed',
+                $e->getMessage(),
+                $tenant,
+                null,
+                ['method' => 'pdo', 'from' => $from, 'to' => $to]
+            );
+
+            throw new \RuntimeException($e->getMessage(), 0, $e);
+        }
+
+        $this->activityLog->database(
+            'clone_database',
+            'ok',
+            "Cloned schema from {$from} to {$to} (PDO, no mysqldump)",
+            $tenant,
+            null,
+            ['method' => 'pdo', 'from' => $from, 'to' => $to, ...$stats]
+        );
+    }
+
+    protected function cloneDatabaseWithMysqldump(Tenant $tenant, string $from, string $to): void
+    {
+        $mysqlEnv = TenantDbAdmin::mysqlCliEnv();
         $timeout = (float) config('master.tenant_db_clone_timeout', 600);
 
         $create = Process::timeout($timeout)
@@ -543,6 +579,7 @@ class TenantProvisionerService
                 $tenant,
                 null,
                 [
+                    'method' => 'mysqldump',
                     'command' => TenantDbAdmin::mysqldumpCommandForLog($from, schemaOnly: true),
                     'build' => TenantDbAdmin::MYSQLDUMP_RDS_BUILD,
                     'exit_code' => $dump->exitCode(),
@@ -557,7 +594,7 @@ class TenantProvisionerService
         if (trim($dump->output()) === '') {
             throw new \RuntimeException(
                 'mysqldump succeeded but produced empty output. Check template database name ('
-                .config('master.template_database').') and permissions.'
+                .config('master.template_database').') or set TENANT_DB_CLONE_METHOD=pdo for RDS.'
             );
         }
 
@@ -575,7 +612,7 @@ class TenantProvisionerService
                 trim($import->errorOutput() ?: 'Import failed'),
                 $tenant,
                 null,
-                ['from' => $from, 'to' => $to]
+                ['method' => 'mysqldump', 'from' => $from, 'to' => $to]
             );
             throw new \RuntimeException($import->errorOutput());
         }
@@ -583,10 +620,10 @@ class TenantProvisionerService
         $this->activityLog->database(
             'clone_database',
             'ok',
-            "Cloned schema from {$from} to {$to}",
+            "Cloned schema from {$from} to {$to} (mysqldump)",
             $tenant,
             null,
-            ['from' => $from, 'to' => $to]
+            ['method' => 'mysqldump', 'from' => $from, 'to' => $to]
         );
     }
 

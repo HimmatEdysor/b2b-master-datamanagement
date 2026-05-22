@@ -77,6 +77,18 @@ class TenantDbAdmin
         return in_array($host, ['127.0.0.1', 'localhost', '::1'], true);
     }
 
+    public static function quoteIdentifier(string $identifier): string
+    {
+        return '`'.str_replace('`', '``', $identifier).'`';
+    }
+
+    public static function cloneMethod(): string
+    {
+        $method = strtolower(trim((string) config('master.tenant_db_clone_method', 'pdo')));
+
+        return in_array($method, ['pdo', 'mysqldump'], true) ? $method : 'pdo';
+    }
+
     /**
      * mysqldump flags safe for AWS RDS (no FLUSH TABLES / RELOAD privileges).
      *
