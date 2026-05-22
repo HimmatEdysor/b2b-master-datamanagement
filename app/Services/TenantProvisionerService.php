@@ -17,9 +17,13 @@ class TenantProvisionerService
         protected TenantSeedDataService $seedDataService,
         protected TenantDefaultUserService $defaultUserService,
         protected TenantS3FolderService $s3FolderService,
+        protected TenantDatabaseUserService $databaseUserService,
     ) {}
 
-    public function approve(Tenant $tenant, ?User $by = null, bool $withData = false): void
+    /**
+     * @return array{username: string, password: string}|null DB credentials when provision succeeds
+     */
+    public function approve(Tenant $tenant, ?User $by = null, bool $withData = false): ?array
     {
         if (! in_array($tenant->status, ['pending', 'failed'], true)) {
             throw new \InvalidArgumentException('Only pending or failed companies can be approved.');
@@ -39,6 +43,7 @@ class TenantProvisionerService
             $this->ensureDomains($tenant);
             $s3Folder = $this->s3FolderService->ensureFolderForTenant($tenant);
             $this->cloneDatabase($tenant, $withData);
+            $dbCredentials = $this->databaseUserService->provisionForTenant($tenant->fresh());
             if (! $withData) {
                 $this->seedDataService->seedFromTemplate($tenant);
             }
@@ -56,9 +61,11 @@ class TenantProvisionerService
                 'provision',
                 'ok',
                 ($withData ? 'Full DB copy' : 'Schema clone + reference seed')
-                    .', S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
+                    .', dedicated MySQL user ('.$dbCredentials['username'].'), S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
                 $by
             );
+
+            return $dbCredentials;
         } catch (\Throwable $e) {
             $tenant->update([
                 'status' => 'failed',

@@ -352,6 +352,9 @@ table.data-table th { background: #f9fafb; font-weight: 600; color: var(--muted)
 .badge-published { background: #d1fae5; color: #065f46; }
 
 .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+.tenant-db-credentials-list { margin: 10px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.tenant-db-credentials-list dt { font-weight: 600; margin: 0; }
+.tenant-db-credentials-list dd { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .alert-success { background: #d1fae5; color: #065f46; }
 .alert-error { background: #fee2e2; color: #991b1b; }
 .alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
@@ -917,6 +920,55 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
     color: var(--text);
     vertical-align: top;
     word-break: break-word;
+}
+.detail-table-domains .domain-actions {
+    white-space: nowrap;
+    text-align: right;
+}
+.detail-table-domains .domain-actions .inline-form {
+    display: inline;
+    margin-left: 6px;
+}
+.domain-platform-note {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+}
+.domain-add-forms {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+.domain-add-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+}
+@media (max-width: 768px) {
+    .domain-add-grid { grid-template-columns: 1fr; }
+}
+.domain-add-form .form-group { margin-bottom: 10px; }
+.input-with-suffix {
+    display: flex;
+    align-items: stretch;
+}
+.input-with-suffix .form-control {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    flex: 1;
+}
+.input-suffix {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--muted);
+    background: var(--bg-muted, #f8fafc);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
 }
 .detail-table a {
     color: var(--accent, #2563eb);

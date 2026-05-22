@@ -141,24 +141,19 @@
         </div>
 
         <div class="form-group span-2">
-            <label for="custom_domain">Custom domain (optional)</label>
+            <label for="custom_domain">{{ $isCreate ? 'Custom domain (optional)' : 'Add custom domain (optional)' }}</label>
             <input type="text" id="custom_domain" name="custom_domain" class="form-control"
                    value="{{ old('custom_domain') }}"
                    placeholder="crm.example.com">
-            <p class="form-hint">White-label hostname. Subdomain <code>{slug}.{{ $baseDomain }}</code> is added on approval ({{ TenantUrl::environmentLabel() }}).</p>
+            <p class="form-hint">
+                @if($isCreate)
+                    White-label hostname. Subdomain <code>{slug}.{{ $baseDomain }}</code> is added on approval ({{ TenantUrl::environmentLabel() }}).
+                @else
+                    Saves a new custom hostname. Manage all domains on the <a href="{{ route('admin.tenants.show', $tenant) }}">company detail</a> page.
+                @endif
+            </p>
             @error('custom_domain')<p class="field-error">{{ $message }}</p>@enderror
         </div>
-
-        @if(! $isCreate && $tenant?->domains->isNotEmpty())
-        <div class="form-group span-2">
-            <label>Registered domains</label>
-            <ul class="domain-list">
-                @foreach($tenant->domains as $domain)
-                    <li><code>{{ $domain->host }}</code> <span class="text-muted">({{ $domain->type }})</span></li>
-                @endforeach
-            </ul>
-        </div>
-        @endif
     </div>
 </fieldset>
 

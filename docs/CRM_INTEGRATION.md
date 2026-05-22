@@ -183,6 +183,52 @@ php artisan tenants:migrate-all edysor --force
 
 `php artisan migrate` alone only runs against the **current** `.env` `DB_*` connection (single-DB / legacy). It does **not** fan out to all tenants unless you use `tenants:migrate-all`.
 
+## 8. Domain management (CRM `/user` settings)
+
+The master portal stores all CRM hostnames (`tenant_domains`). Use these APIs from the tenant CRM **user settings** page (e.g. `https://guaranteeadmit.com/user`) so admins can see the default platform URL, their company subdomain, and add custom domains.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/v1/tenants/{slug}/domains` | List domains + primary/default URLs |
+| `POST` | `/api/v1/tenants/{slug}/domains` | Add `custom` host or `subdomain_alias` |
+| `POST` | `/api/v1/tenants/{slug}/domains/{id}` | Set primary domain |
+| `DELETE` | `/api/v1/tenants/{slug}/domains/{id}` | Remove domain (not the canonical `{slug}.{base}` subdomain) |
+
+Auth: same `Authorization: Bearer {MASTER_API_TOKEN}` as resolve.
+
+**POST body examples:**
+
+```json
+{ "type": "custom", "host": "crm.client.com" }
+```
+
+```json
+{ "type": "subdomain_alias", "alias": "sales" }
+```
+
+Creates `sales.guaranteeadmit.com` pointing at the same tenant database.
+
+**List response (abbreviated):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "slug": "edysor",
+    "base_domain": "guaranteeadmit.com",
+    "default_platform_url": "https://guaranteeadmit.com",
+    "primary_url": "https://edysor.guaranteeadmit.com",
+    "domains": [
+      { "host": "edysor.guaranteeadmit.com", "type": "subdomain", "is_primary": true, "url": "https://edysor.guaranteeadmit.com", "label": "Company CRM subdomain" }
+    ]
+  }
+}
+```
+
+The default Guarantee Admit tenant (`slug: guaranteeadmit`) uses apex **`https://guaranteeadmit.com`** as the platform CRM. Partner companies use **`https://{slug}.guaranteeadmit.com`**.
+
+Resolve API also returns `domains_detail`, `primary_url`, `default_platform_url`, and `is_platform_default` for display on `/user`.
+
 ## Security
 
 - Use HTTPS for master API

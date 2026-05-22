@@ -39,8 +39,8 @@ class TenantAddCommand extends Command
             'database_name' => $database,
             'database_host' => config('master.tenant_db_host'),
             'database_port' => (int) config('master.tenant_db_port'),
-            'database_username' => config('master.tenant_db_username'),
-            'database_password' => config('master.tenant_db_password'),
+            'database_username' => null,
+            'database_password' => null,
             'brand_name' => $name.' CRM',
             'subscription_status' => 'active',
         ]);

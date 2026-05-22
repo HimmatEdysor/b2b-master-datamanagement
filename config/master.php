@@ -43,6 +43,15 @@ return [
     'tenant_db_username' => env('TENANT_DB_USERNAME', env('DB_USERNAME', 'root')),
     'tenant_db_password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
 
+    /*
+    | MySQL hosts for per-tenant DB users (CREATE USER … @host). Use % for remote/TCP;
+    | include localhost when CRM connects via socket on the same server.
+    */
+    'tenant_db_user_hosts' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_USER_HOSTS', env('APP_ENV') === 'local' ? '%,localhost' : '%'))
+    ))),
+
     'template_database' => env('TENANT_TEMPLATE_DATABASE', 'b2b_live_database'),
 
     'tenant_database_prefix' => env('TENANT_DATABASE_PREFIX', 'b2b_tenant_'),

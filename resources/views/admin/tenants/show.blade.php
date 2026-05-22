@@ -14,6 +14,19 @@
 @endpush
 
 @section('content')
+@if(session('tenant_db_credentials'))
+    @php($dbCreds = session('tenant_db_credentials'))
+    <div class="alert alert-success tenant-db-credentials-alert" role="status">
+        <strong>Dedicated database user created.</strong>
+        Save these credentials now — the password is stored encrypted and is only shown here once.
+        <dl class="tenant-db-credentials-list">
+            <dt>Username</dt>
+            <dd><code>{{ $dbCreds['username'] }}</code> @include('admin.partials.copy-btn', ['text' => $dbCreds['username'], 'title' => 'Copy username'])</dd>
+            <dt>Password</dt>
+            <dd><code>{{ $dbCreds['password'] }}</code> @include('admin.partials.copy-btn', ['text' => $dbCreds['password'], 'title' => 'Copy password'])</dd>
+        </dl>
+    </div>
+@endif
 <div class="tenant-show">
     <div class="page-toolbar tenant-show-toolbar">
         <div>
@@ -203,33 +216,9 @@
         </div>
 
         {{-- Domains --}}
-        <div class="card tenant-detail-card">
-            <h2 class="tenant-detail-heading">Domains</h2>
-            @if($tenant->domains->isEmpty())
-                <p class="detail-empty-block">No domains configured yet. Subdomain is created on approval.</p>
-                @if($tenant->slug)
-                    <p class="form-hint">Expected: <code>{{ TenantUrl::urlForSlug($tenant->slug) }}</code></p>
-                @endif
-            @else
-                <table class="detail-table detail-table-domains">
-                    <thead>
-                        <tr>
-                            <th>Host</th>
-                            <th>Type</th>
-                            <th>Primary</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($tenant->domains as $domain)
-                            <tr>
-                                <td><code>{{ $domain->host }}</code></td>
-                                <td>{{ ucfirst($domain->type) }}</td>
-                                <td>{{ $domain->is_primary ? 'Yes' : '—' }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            @endif
+        <div class="card tenant-detail-card span-full">
+            <h2 class="tenant-detail-heading">Domains & CRM URLs</h2>
+            @include('admin.tenants._domains-manage')
         </div>
 
         {{-- Database --}}
@@ -239,8 +228,17 @@
                 @include('admin.tenants._detail-row', ['label' => 'Database name', 'value' => $tenant->database_name])
                 @include('admin.tenants._detail-row', ['label' => 'Host', 'value' => $tenant->databaseHost()])
                 @include('admin.tenants._detail-row', ['label' => 'Port', 'value' => $tenant->database_port])
-                @include('admin.tenants._detail-row', ['label' => 'Username', 'value' => $tenant->databaseUsername()])
-                @include('admin.tenants._detail-row', ['label' => 'Password', 'value' => $tenant->database_password ? '•••••••• (encrypted)' : null])
+                @include('admin.tenants._detail-row', [
+                    'label' => 'Username',
+                    'value' => $tenant->database_username
+                        ?: ($tenant->isActive() ? null : 'Created on approval (same as database name)'),
+                ])
+                @include('admin.tenants._detail-row', [
+                    'label' => 'Password',
+                    'value' => $tenant->database_password
+                        ? 'Stored encrypted (shown once after approval)'
+                        : ($tenant->isActive() ? null : 'Generated on approval'),
+                ])
                 @include('admin.tenants._detail-row', ['label' => 'S3 folder', 'value' => $tenant->slug])
             </table>
         </div>

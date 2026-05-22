@@ -4,6 +4,8 @@
 
 Manages companies, domains, database credentials, subscriptions, and exposes **one API** for the main CRM to resolve tenant configuration by subdomain/host.
 
+On **approval**, each company gets its own MySQL database plus a **dedicated MySQL user** (username = database name, random password). Credentials are stored encrypted on the `tenants` row and shown once in the admin UI; the resolve API returns them to the CRM.
+
 ## Setup
 
 ```bash

@@ -24,8 +24,9 @@ class TenantDomainService
         $tenant->loadMissing('domains');
 
         return $tenant->domains
-            ->sortByDesc('is_primary')
-            ->sortBy('host')
+            ->sortBy([
+                fn (TenantDomain $a, TenantDomain $b) => ($b->is_primary <=> $a->is_primary) ?: strcmp($a->host, $b->host),
+            ])
             ->values()
             ->map(fn (TenantDomain $domain) => $this->toListItem($domain, $tenant))
             ->all();

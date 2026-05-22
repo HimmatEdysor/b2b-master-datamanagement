@@ -116,7 +116,7 @@ class TenantController extends Controller
         if ($request->boolean('approve_immediately')) {
             $withData = $request->boolean('with_data');
             try {
-                $this->provisioner->approve($tenant->fresh(), Auth::user(), $withData);
+                $dbCredentials = $this->provisioner->approve($tenant->fresh(), Auth::user(), $withData);
             } catch (\Throwable $e) {
                 return redirect()
                     ->route('admin.tenants.show', $tenant)
@@ -127,9 +127,11 @@ class TenantController extends Controller
                 ? 'Full template data was copied into the tenant database.'
                 : 'Database structure was cloned; reference data was seeded.';
 
-            return redirect()
-                ->route('admin.tenants.show', $tenant)
-                ->with('success', 'Company approved and database provisioned. '.$cloneNote);
+            return $this->redirectAfterProvision(
+                redirect()->route('admin.tenants.show', $tenant),
+                'Company approved and database provisioned. '.$cloneNote,
+                $dbCredentials
+            );
         }
 
         return redirect()
@@ -203,7 +205,7 @@ class TenantController extends Controller
     public function approve(Request $request, Tenant $tenant): RedirectResponse
     {
         try {
-            $this->provisioner->approve(
+            $dbCredentials = $this->provisioner->approve(
                 $tenant,
                 Auth::user(),
                 $request->boolean('with_data')
@@ -217,7 +219,11 @@ class TenantController extends Controller
             ? 'All data from the template database was copied into the new tenant database.'
             : 'Database structure was cloned; reference data was seeded (no full data copy).';
 
-        return back()->with('success', 'Company approved. '.$cloneNote);
+        return $this->redirectAfterProvision(
+            back(),
+            'Company approved. '.$cloneNote,
+            $dbCredentials
+        );
     }
 
     public function reject(Request $request, Tenant $tenant): RedirectResponse
@@ -413,6 +419,20 @@ class TenantController extends Controller
         ]);
     }
 
+    /**
+     * @param  array{username: string, password: string}|null  $dbCredentials
+     */
+    protected function redirectAfterProvision(RedirectResponse $redirect, string $message, ?array $dbCredentials): RedirectResponse
+    {
+        $redirect = $redirect->with('success', $message);
+
+        if ($dbCredentials !== null) {
+            $redirect->with('tenant_db_credentials', $dbCredentials);
+        }
+
+        return $redirect;
+    }
+
     protected function tenantPayload(array $validated, string $databaseName, ?string $logoUrl = null, ?string $faviconUrl = null): array
     {
         return [
@@ -420,8 +440,8 @@ class TenantController extends Controller
             'database_name' => $databaseName,
             'database_host' => config('master.tenant_db_host'),
             'database_port' => (int) config('master.tenant_db_port'),
-            'database_username' => config('master.tenant_db_username'),
-            'database_password' => config('master.tenant_db_password'),
+            'database_username' => null,
+            'database_password' => null,
             'business_type' => $validated['business_type'] ?? null,
             'company_website' => $validated['company_website'] ?? null,
             'address_line' => $validated['address_line'] ?? null,
