@@ -28,6 +28,7 @@ class Tenant extends Model
         'database_port',
         'database_username',
         'database_password',
+        's3_folder',
         'brand_name',
         'logo_url',
         'favicon_url',
@@ -92,18 +93,45 @@ class Tenant extends Model
             ?? $this->domains()->first();
     }
 
-    public function databaseHost(): string
+    /**
+     * CRM / migrate use only values stored on this tenant row (never .env fallbacks).
+     */
+    public function isDatabaseProvisioned(): bool
     {
-        return $this->database_host ?: (string) config('master.tenant_db_host');
+        return $this->database_name !== null
+            && $this->database_name !== ''
+            && $this->database_host !== null
+            && $this->database_host !== ''
+            && $this->database_username !== null
+            && $this->database_username !== ''
+            && $this->database_password !== null
+            && $this->database_password !== '';
     }
 
-    public function databaseUsername(): string
+    /**
+     * @return array{host: string, port: int, database: string, username: string, password: string}
+     */
+    public function connectionConfig(): array
     {
-        return $this->database_username ?: (string) config('master.tenant_db_username');
+        if (! $this->isDatabaseProvisioned()) {
+            throw new \RuntimeException(
+                "Company [{$this->slug}] has no complete database connection stored. Approve provisioning or set host, username, and password on the company record."
+            );
+        }
+
+        return [
+            'host' => (string) $this->database_host,
+            'port' => (int) ($this->database_port ?: 3306),
+            'database' => (string) $this->database_name,
+            'username' => (string) $this->database_username,
+            'password' => (string) $this->database_password,
+        ];
     }
 
-    public function databasePassword(): string
+    public function s3Folder(): string
     {
-        return $this->database_password ?: (string) config('master.tenant_db_password');
+        $folder = trim((string) ($this->s3_folder ?? ''), '/');
+
+        return $folder !== '' ? $folder : (string) $this->slug;
     }
 }

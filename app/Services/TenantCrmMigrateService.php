@@ -150,12 +150,22 @@ class TenantCrmMigrateService
         $php = config('master.tenant_crm_php_binary');
         $phpBinary = (is_string($php) && $php !== '') ? $php : PHP_BINARY;
 
+        if (! $tenant->isDatabaseProvisioned()) {
+            return [
+                'ok' => false,
+                'message' => 'This company has no database connection stored (host, username, password). Approve provisioning or edit the company record.',
+                'output' => '',
+                'persisted' => false,
+            ];
+        }
+
+        $db = $tenant->connectionConfig();
         $dbEnv = [
-            'DB_HOST' => $tenant->databaseHost(),
-            'DB_PORT' => (string) ($tenant->database_port ?: config('master.tenant_db_port')),
-            'DB_DATABASE' => $tenant->database_name,
-            'DB_USERNAME' => $tenant->databaseUsername(),
-            'DB_PASSWORD' => $tenant->databasePassword(),
+            'DB_HOST' => $db['host'],
+            'DB_PORT' => (string) $db['port'],
+            'DB_DATABASE' => $db['database'],
+            'DB_USERNAME' => $db['username'],
+            'DB_PASSWORD' => $db['password'],
         ];
 
         $timeout = (float) config('master.tenant_crm_migrate_timeout', 600);

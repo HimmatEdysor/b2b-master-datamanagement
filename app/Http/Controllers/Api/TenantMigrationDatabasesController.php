@@ -28,6 +28,11 @@ class TenantMigrationDatabasesController extends Controller
         $query = Tenant::query()
             ->whereNotNull('database_name')
             ->where('database_name', '!=', '')
+            ->whereNotNull('database_host')
+            ->where('database_host', '!=', '')
+            ->whereNotNull('database_username')
+            ->where('database_username', '!=', '')
+            ->whereNotNull('database_password')
             ->orderBy('id');
 
         if ($slug !== '') {

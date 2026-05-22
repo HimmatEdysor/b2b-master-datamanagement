@@ -46,6 +46,8 @@ class TenantS3FolderService
                 ['folder' => $folder]
             );
 
+            $tenant->update(['s3_folder' => $folder]);
+
             return $folder;
         }
 
@@ -78,6 +80,8 @@ class TenantS3FolderService
             null,
             ['folder' => $folder, 'bucket' => config('filesystems.disks.s3.bucket')]
         );
+
+        $tenant->update(['s3_folder' => $folder]);
 
         return $folder;
     }

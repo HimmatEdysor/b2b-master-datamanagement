@@ -226,7 +226,7 @@
             <h2 class="tenant-detail-heading">Database (CRM)</h2>
             <table class="detail-table">
                 @include('admin.tenants._detail-row', ['label' => 'Database name', 'value' => $tenant->database_name])
-                @include('admin.tenants._detail-row', ['label' => 'Host', 'value' => $tenant->databaseHost()])
+                @include('admin.tenants._detail-row', ['label' => 'Host', 'value' => $tenant->database_host])
                 @include('admin.tenants._detail-row', ['label' => 'Port', 'value' => $tenant->database_port])
                 @include('admin.tenants._detail-row', [
                     'label' => 'Username',
@@ -239,7 +239,7 @@
                         ? 'Stored encrypted (shown once after approval)'
                         : ($tenant->isActive() ? null : 'Generated on approval'),
                 ])
-                @include('admin.tenants._detail-row', ['label' => 'S3 folder', 'value' => $tenant->slug])
+                @include('admin.tenants._detail-row', ['label' => 'S3 folder', 'value' => $tenant->s3_folder ?: ($tenant->isActive() ? null : $tenant->slug)])
             </table>
         </div>
 

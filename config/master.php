@@ -41,7 +41,8 @@ return [
     'tenant_s3_enabled' => (bool) env('AWS_BUCKET'),
 
     /*
-    | Default MySQL credentials applied to new tenants when not overridden.
+    | Platform MySQL admin (provision only: CREATE DATABASE, mysqldump, CREATE USER).
+    | Each company's CRM connection is stored on the tenants row after approval — not read from here.
     */
     'tenant_db_host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),
     'tenant_db_port' => env('TENANT_DB_PORT', env('DB_PORT', '3306')),

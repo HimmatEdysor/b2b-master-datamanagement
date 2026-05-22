@@ -61,6 +61,14 @@ class TenantResolveController extends Controller
             ], 503);
         }
 
+        if (! $tenant->isDatabaseProvisioned()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Company database is not provisioned yet.',
+                'status' => $tenant->status,
+            ], 503);
+        }
+
         $tenant->loadMissing('domains');
 
         return response()->json([

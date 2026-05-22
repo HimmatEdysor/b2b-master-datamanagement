@@ -42,6 +42,7 @@ class TenantProvisionerService
 
         try {
             $this->ensureDomains($tenant);
+            $this->persistTenantDatabaseEndpoint($tenant);
             $s3Folder = $this->s3FolderService->ensureFolderForTenant($tenant);
             $this->cloneDatabase($tenant, $withData);
             $dbCredentials = $this->databaseUserService->provisionForTenant($tenant->fresh());
@@ -197,6 +198,17 @@ class TenantProvisionerService
     public function reserveDatabaseName(string $slug): string
     {
         return config('master.tenant_database_prefix').Str::slug($slug, '');
+    }
+
+    /**
+     * Snapshot RDS host/port onto the tenant row (CRM reads from DB, not .env).
+     */
+    protected function persistTenantDatabaseEndpoint(Tenant $tenant): void
+    {
+        $tenant->update([
+            'database_host' => (string) config('master.tenant_db_host'),
+            'database_port' => (int) config('master.tenant_db_port'),
+        ]);
     }
 
     protected function log(Tenant $tenant, string $action, string $status, ?string $message, ?User $by): void

@@ -234,6 +234,40 @@
     </div>
 </fieldset>
 
+@if(! $isCreate)
+<fieldset class="admin-form-section">
+    <legend>Database &amp; storage (per company)</legend>
+    <p class="form-hint" style="margin-top:0">CRM reads these from the company record via resolve API — not from master <code>.env</code>. Filled automatically on approval.</p>
+    <div class="admin-form-grid">
+        <div class="form-group">
+            <label for="database_host">Database host</label>
+            <input type="text" id="database_host" name="database_host" class="form-control"
+                   value="{{ old('database_host', $tenant?->database_host) }}"
+                   placeholder="Set on approval">
+            @error('database_host')<p class="field-error">{{ $message }}</p>@enderror
+        </div>
+        <div class="form-group">
+            <label for="database_port">Database port</label>
+            <input type="number" id="database_port" name="database_port" class="form-control"
+                   value="{{ old('database_port', $tenant?->database_port ?? 3306) }}" min="1" max="65535">
+            @error('database_port')<p class="field-error">{{ $message }}</p>@enderror
+        </div>
+        <div class="form-group">
+            <label for="s3_folder">S3 folder</label>
+            <input type="text" id="s3_folder" name="s3_folder" class="form-control"
+                   value="{{ old('s3_folder', $tenant?->s3_folder) }}"
+                   pattern="[a-z0-9][a-z0-9_-]*"
+                   placeholder="{{ $tenant?->slug ?? 'slug' }}">
+            <p class="form-hint">Prefix in shared bucket for this company’s files.</p>
+            @error('s3_folder')<p class="field-error">{{ $message }}</p>@enderror
+        </div>
+        <div class="form-group span-2">
+            <p class="form-hint">MySQL username/password are created on approval and stored encrypted. Domains are managed on the <a href="{{ route('admin.tenants.show', $tenant) }}">detail page</a>.</p>
+        </div>
+    </div>
+</fieldset>
+@endif
+
 <fieldset class="admin-form-section">
     <legend>Notes</legend>
     <div class="form-group">

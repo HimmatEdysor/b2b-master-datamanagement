@@ -69,6 +69,7 @@ class TenantResolverService
     public function toApiPayload(Tenant $tenant): array
     {
         $plan = $tenant->subscriptionPlan;
+        $db = $tenant->connectionConfig();
 
         return [
             'tenant_id' => $tenant->id,
@@ -78,11 +79,11 @@ class TenantResolverService
             'status' => $tenant->status,
             'database' => [
                 'driver' => 'mysql',
-                'host' => $tenant->databaseHost(),
-                'port' => (int) ($tenant->database_port ?: config('master.tenant_db_port')),
-                'database' => $tenant->database_name,
-                'username' => $tenant->databaseUsername(),
-                'password' => $tenant->databasePassword(),
+                'host' => $db['host'],
+                'port' => $db['port'],
+                'database' => $db['database'],
+                'username' => $db['username'],
+                'password' => $db['password'],
             ],
             'branding' => [
                 'app_name' => $tenant->brand_name ?: $tenant->name,
@@ -122,7 +123,7 @@ class TenantResolverService
                 'error' => $tenant->migration_error,
             ],
             'storage' => [
-                's3_folder' => $tenant->slug,
+                's3_folder' => $tenant->s3Folder(),
             ],
         ];
     }

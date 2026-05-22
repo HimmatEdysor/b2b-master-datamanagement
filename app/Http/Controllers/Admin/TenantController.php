@@ -387,6 +387,9 @@ class TenantController extends Controller
             'state' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'max:120'],
             'database_name' => ['nullable', 'string', 'max:128', 'regex:/^[a-z0-9_]+$/', 'unique:tenants,database_name,'.($ignoreId ?? 'NULL')],
+            'database_host' => ['nullable', 'string', 'max:255'],
+            'database_port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            's3_folder' => ['nullable', 'string', 'max:128', 'regex:/^[a-z0-9][a-z0-9_-]*$/'],
             'status' => [
                 'nullable',
                 'in:'.implode(',', config('master.tenant_statuses', ['pending', 'provisioning', 'active', 'failed', 'suspended', 'rejected'])),
@@ -442,10 +445,11 @@ class TenantController extends Controller
         return [
             'name' => $validated['name'],
             'database_name' => $databaseName,
-            'database_host' => config('master.tenant_db_host'),
-            'database_port' => (int) config('master.tenant_db_port'),
+            'database_host' => null,
+            'database_port' => 3306,
             'database_username' => null,
             'database_password' => null,
+            's3_folder' => null,
             'business_type' => $validated['business_type'] ?? null,
             'company_website' => $validated['company_website'] ?? null,
             'address_line' => $validated['address_line'] ?? null,
