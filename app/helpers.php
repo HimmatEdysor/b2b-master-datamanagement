@@ -8,3 +8,10 @@ if (! function_exists('master_can')) {
         return MasterAuth::can($permission);
     }
 }
+
+if (! function_exists('master_can_view_activity_logs')) {
+    function master_can_view_activity_logs(): bool
+    {
+        return master_can('logs.view') || master_can('tenants.view');
+    }
+}

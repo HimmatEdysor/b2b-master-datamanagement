@@ -44,8 +44,12 @@
 
     <div class="card">
         <h2 class="card-title">Recent activity</h2>
-        @if(master_can('logs.view'))
-            <p style="margin:0 0 12px"><a href="{{ route('admin.logs.index') }}">View all activity logs (database, S3, domain, DNS) →</a></p>
+        @if(master_can_view_activity_logs())
+            <p style="margin:0 0 12px">
+                <a href="{{ route('admin.logs.index') }}">View activity logs</a>
+                <span class="cell-muted"> — </span>
+                <code class="code-pill code-pill-muted">{{ route('admin.logs.index') }}</code>
+            </p>
         @endif
         <table class="data-table">
             <thead><tr><th>Action</th><th>Company</th><th>Status</th></tr></thead>
@@ -64,6 +68,9 @@
 
 <div class="card">
     <h2 class="card-title">Quick links</h2>
+    @if(master_can_view_activity_logs())
+    <a href="{{ route('admin.logs.index') }}" class="btn btn-outline">Activity logs</a>
+    @endif
     <a href="{{ route('admin.tenants.create') }}" class="btn btn-primary">Add company (admin)</a>
     <a href="{{ route('admin.blog.create') }}" class="btn btn-outline" style="margin-left:8px">Write blog post</a>
     <a href="{{ route('register') }}" class="btn btn-outline" style="margin-left:8px" target="_blank">Public registration</a>

@@ -5,63 +5,93 @@
 
 @section('content')
 <div class="logs-page">
-    <p class="page-lead">Per-day log files for database, S3, domain, and DNS operations. Newest entries appear first when viewing a day.</p>
+    <p class="page-lead">Log files from <code>{{ $logIndexUrl }}</code> — select a file on the left to view in the editor.</p>
 
-    <div class="logs-layout">
-        <nav class="logs-channel-nav card" aria-label="Log categories">
-            <h2 class="logs-nav-title">Categories</h2>
-            <ul class="logs-channel-list">
-                @foreach($channels as $key => $info)
-                    <li>
-                        <a href="{{ route('admin.logs.index', ['channel' => $key, 'date' => $key === $channel ? $date : null]) }}"
-                           class="logs-channel-link {{ $key === $channel ? 'active' : '' }}">
-                            <span class="logs-channel-label">{{ $info['label'] }}</span>
-                            <span class="logs-channel-desc">{{ $info['description'] }}</span>
-                        </a>
-                    </li>
-                @endforeach
-            </ul>
-        </nav>
+    <div class="logs-workspace">
+        <aside class="logs-file-sidebar" aria-label="Log files from storage">
+            <div class="logs-file-sidebar-head">
+                <h2 class="logs-nav-title">Log files</h2>
+                <span class="logs-file-count">{{ count($allFiles) }} file{{ count($allFiles) === 1 ? '' : 's' }}</span>
+            </div>
+            <p class="logs-storage-path" title="Path on server"><code>{{ $storagePathLabel }}</code></p>
 
-        <aside class="logs-dates-panel card" aria-label="Log dates">
-            <h2 class="logs-nav-title">Days</h2>
-            @if($dates === [])
-                <p class="logs-empty-hint">No log files yet for this category.</p>
+            @if($allFiles === [])
+                <p class="logs-empty-hint">No log files in storage yet. Approve a company, change a domain, or run a migration to generate logs.</p>
             @else
-                <ul class="logs-date-list">
-                    @foreach($dates as $day)
-                        <li>
-                            <a href="{{ route('admin.logs.index', ['channel' => $channel, 'date' => $day]) }}"
-                               class="logs-date-link {{ $day === $date ? 'active' : '' }}">
-                                {{ \Carbon\Carbon::parse($day)->format('d M Y') }}
-                                <span class="logs-date-raw">{{ $day }}</span>
-                            </a>
-                        </li>
+                <div class="logs-file-tree">
+                    @foreach($filesByChannel as $channelKey => $channelFiles)
+                        @php
+                            $channelInfo = $channels[$channelKey] ?? ['label' => ucfirst($channelKey)];
+                        @endphp
+                        <div class="logs-file-group">
+                            <div class="logs-file-group-title">{{ $channelInfo['label'] }}</div>
+                            <ul class="logs-file-list">
+                                @foreach($channelFiles as $file)
+                                    @php
+                                        $isActive = $channel === $file['channel'] && $date === $file['date'];
+                                    @endphp
+                                    <li>
+                                        <a href="{{ route('admin.logs.index', ['channel' => $file['channel'], 'date' => $file['date']]) }}"
+                                           class="logs-file-item {{ $isActive ? 'is-active' : '' }}">
+                                            <span class="logs-file-name">{{ $file['filename'] }}</span>
+                                            <span class="logs-file-meta">{{ $file['size_label'] }}</span>
+                                        </a>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
                     @endforeach
-                </ul>
+                </div>
             @endif
         </aside>
 
-        <div class="logs-viewer card">
-            <div class="logs-viewer-header">
-                <div>
-                    <h2 class="logs-nav-title" style="margin:0">{{ $channels[$channel]['label'] ?? ucfirst($channel) }}</h2>
-                    <p class="logs-viewer-meta">
-                        <code>{{ $date }}.log</code>
-                        @if($fileSize !== null)
-                            · {{ $fileSizeLabel }}
-                        @endif
-                    </p>
-                </div>
-                <a href="{{ route('admin.logs.index', ['channel' => $channel, 'date' => $date]) }}" class="btn btn-outline btn-sm">Refresh</a>
-            </div>
+        <section class="logs-editor-panel" aria-label="Log file viewer">
+            @if($channel && $date)
+                <header class="logs-editor-toolbar">
+                    <div class="logs-editor-toolbar-info">
+                        <strong class="logs-editor-title">{{ $selectedLabel }}</strong>
+                        <span class="logs-editor-meta">
+                            <code>{{ $channel }}/{{ $date }}.log</code>
+                            @if($fileSize !== null)
+                                · {{ $fileSizeLabel }}
+                            @endif
+                        </span>
+                    </div>
+                    <div class="logs-editor-actions">
+                        @include('admin.partials.copy-btn', ['text' => $content, 'title' => 'Copy log content', 'label' => 'Copy'])
+                        <a href="{{ route('admin.logs.index', ['channel' => $channel, 'date' => $date]) }}" class="btn btn-outline btn-sm">Refresh</a>
+                    </div>
+                </header>
 
-            @if($content === '')
-                <p class="logs-empty-hint">No entries for this day. Operations will be logged here when they run.</p>
+                @if($content === '')
+                    <p class="logs-empty-hint logs-editor-empty">This file exists but has no entries yet.</p>
+                @endif
+
+                <textarea class="logs-text-editor"
+                          readonly
+                          spellcheck="false"
+                          aria-label="Log file content for {{ $selectedLabel }}">{{ $content }}</textarea>
             @else
-                <pre class="logs-viewer-content" tabindex="0">{{ $content }}</pre>
+                <div class="logs-editor-placeholder">
+                    <p class="logs-empty-hint">Select a log file from the left to view its contents.</p>
+                </div>
             @endif
-        </div>
+        </section>
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+(function () {
+    const editor = document.querySelector('.logs-text-editor');
+    if (!editor) return;
+    editor.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            editor.select();
+        }
+    });
+})();
+</script>
+@endpush

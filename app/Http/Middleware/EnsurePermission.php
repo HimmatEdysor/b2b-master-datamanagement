@@ -11,10 +11,12 @@ class EnsurePermission
 {
     public function handle(Request $request, Closure $next, string $permission): Response
     {
-        if (! MasterAuth::can($permission)) {
-            abort(403, 'You do not have permission to perform this action.');
+        foreach (explode(',', $permission) as $name) {
+            if (MasterAuth::can(trim($name))) {
+                return $next($request);
+            }
         }
 
-        return $next($request);
+        abort(403, 'You do not have permission to perform this action.');
     }
 }

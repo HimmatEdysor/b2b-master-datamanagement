@@ -26,6 +26,8 @@ return [
         ],
     ],
 
-    'max_view_lines' => (int) env('MASTER_LOG_VIEW_LINES', 2000),
+    'max_view_lines' => (int) env('MASTER_LOG_VIEW_LINES', 5000),
+
+    'max_view_bytes' => (int) env('MASTER_LOG_VIEW_BYTES', 2_097_152),
 
 ];

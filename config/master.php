@@ -23,6 +23,11 @@ return [
 
     'tenant_crm_port' => env('TENANT_CRM_PORT', env('APP_ENV') === 'local' ? '8000' : null),
 
+    /*
+    | Force :port on tenant CRM URLs even on production base domain (normally off).
+    */
+    'tenant_crm_port_force' => env('TENANT_CRM_PORT_FORCE', false),
+
     'master_domain' => env('MASTER_DOMAIN') ?: (
         env('APP_ENV') === 'local' ? '127.0.0.1:8001' : 'master.guaranteeadmit.com'
     ),

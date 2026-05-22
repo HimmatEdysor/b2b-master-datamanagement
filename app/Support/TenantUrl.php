@@ -34,20 +34,61 @@ class TenantUrl
         return $port !== null && $port !== '' ? (int) $port : null;
     }
 
+    /**
+     * Whether tenant CRM links should include a non-standard port (local dev only).
+     */
+    public static function usesPortInUrls(): bool
+    {
+        if (filter_var(config('master.tenant_crm_port_force'), FILTER_VALIDATE_BOOLEAN)) {
+            return static::port() !== null;
+        }
+
+        if (! static::isLocal()) {
+            return false;
+        }
+
+        if (static::baseDomainIsProduction()) {
+            return false;
+        }
+
+        return static::port() !== null;
+    }
+
     public static function portSuffix(): string
     {
-        $port = static::port();
-
-        if ($port === null) {
+        if (! static::usesPortInUrls()) {
             return '';
         }
 
+        $port = static::port();
         $scheme = static::scheme();
+
         if (($scheme === 'http' && $port === 80) || ($scheme === 'https' && $port === 443)) {
             return '';
         }
 
         return ':'.$port;
+    }
+
+    public static function baseDomainIsProduction(): bool
+    {
+        $base = static::baseDomain();
+        $prod = (string) config('master.tenant_base_domain_production', 'guaranteeadmit.com');
+
+        return $base === $prod || str_ends_with($base, '.'.$prod);
+    }
+
+    /** Strip slashes, ports, and whitespace from a hostname. */
+    public static function normalizeHost(string $host): string
+    {
+        $host = strtolower(trim($host));
+        $host = rtrim($host, '/');
+
+        if (preg_match('/^(.+):(\d+)$/', $host, $matches) && ! str_contains($matches[1], ']')) {
+            $host = $matches[1];
+        }
+
+        return $host;
     }
 
     public static function subdomainHost(string $slug): string
@@ -80,7 +121,7 @@ class TenantUrl
      */
     public static function normalizeHostForEnvironment(string $host, ?string $slug = null): string
     {
-        $host = strtolower(trim($host));
+        $host = static::normalizeHost($host);
 
         if (! static::isLocal() || $slug === null || $slug === '') {
             return $host;
@@ -105,7 +146,7 @@ class TenantUrl
             return null;
         }
 
-        return static::scheme().'://'.trim($host).static::portSuffix();
+        return static::scheme().'://'.static::normalizeHost($host).static::portSuffix();
     }
 
     public static function urlForSlug(string $slug): string

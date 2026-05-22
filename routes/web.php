@@ -44,7 +44,7 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
     Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
     Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
 
-    Route::middleware('permission:logs.view')->group(function () {
+    Route::middleware('permission:logs.view,tenants.view')->group(function () {
         Route::get('logs', [ActivityLogController::class, 'index'])->name('logs.index');
     });
 

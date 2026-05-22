@@ -117,6 +117,85 @@ class MasterActivityLogService
         return array_key_exists($channel, $this->channels());
     }
 
+    public function fileExists(string $channel, string $date): bool
+    {
+        if (! $this->isValidChannel($channel) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return false;
+        }
+
+        return is_file($this->filePath($channel, $date));
+    }
+
+    /**
+     * All log files on disk, newest first.
+     *
+     * @return list<array{
+     *     channel: string,
+     *     date: string,
+     *     filename: string,
+     *     channel_label: string,
+     *     size: int,
+     *     size_label: string,
+     *     modified: int
+     * }>
+     */
+    public function listAllLogFiles(): array
+    {
+        $files = [];
+
+        foreach ($this->channels() as $channel => $info) {
+            foreach ($this->datesForChannel($channel) as $date) {
+                $path = $this->filePath($channel, $date);
+                $size = is_file($path) ? (int) filesize($path) : 0;
+
+                $files[] = [
+                    'channel' => $channel,
+                    'date' => $date,
+                    'filename' => $date.'.log',
+                    'channel_label' => $info['label'] ?? ucfirst($channel),
+                    'size' => $size,
+                    'size_label' => $this->formatFileSize($size),
+                    'modified' => is_file($path) ? (int) filemtime($path) : 0,
+                ];
+            }
+        }
+
+        usort($files, function (array $a, array $b): int {
+            $byTime = $b['modified'] <=> $a['modified'];
+
+            return $byTime !== 0 ? $byTime : strcmp($b['date'], $a['date']);
+        });
+
+        return $files;
+    }
+
+    /**
+     * @return array{channel: string, date: string}|null
+     */
+    public function resolveSelection(?string $channel, ?string $date, array $allFiles): ?array
+    {
+        if ($channel && $date && $this->fileExists($channel, $date)) {
+            return ['channel' => $channel, 'date' => $date];
+        }
+
+        if ($allFiles === []) {
+            return null;
+        }
+
+        if ($channel) {
+            foreach ($allFiles as $file) {
+                if ($file['channel'] === $channel) {
+                    return ['channel' => $file['channel'], 'date' => $file['date']];
+                }
+            }
+        }
+
+        return [
+            'channel' => $allFiles[0]['channel'],
+            'date' => $allFiles[0]['date'],
+        ];
+    }
+
     /**
      * @return list<string> Dates (Y-m-d), newest first
      */
@@ -144,29 +223,39 @@ class MasterActivityLogService
         return $dates;
     }
 
-    public function readLog(string $channel, string $date): string
+    public function readLog(string $channel, string $date, bool $newestFirst = true): string
     {
-        if (! $this->isValidChannel($channel) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        if (! $this->fileExists($channel, $date)) {
             return '';
         }
 
         $path = $this->filePath($channel, $date);
-        if (! is_file($path)) {
+        $maxBytes = (int) config('master_logs.max_view_bytes', 2_097_152);
+        $maxLines = (int) config('master_logs.max_view_lines', 5000);
+
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
             return '';
         }
 
-        $max = config('master_logs.max_view_lines', 2000);
-        $lines = file($path, FILE_IGNORE_NEW_LINES);
-        if ($lines === false) {
-            return '';
+        if (strlen($raw) > $maxBytes) {
+            $raw = '--- File truncated (showing last '.round($maxBytes / 1024).' KB) ---'."\n"
+                .substr($raw, -$maxBytes);
         }
 
-        if (count($lines) > $max) {
-            $lines = array_slice($lines, -$max);
-            array_unshift($lines, '--- Showing last '.$max.' lines ---');
+        $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+        $lines = array_values(array_filter($lines, fn ($line) => $line !== null));
+
+        if (count($lines) > $maxLines) {
+            $lines = array_slice($lines, -$maxLines);
+            array_unshift($lines, '--- Showing last '.$maxLines.' lines ---');
         }
 
-        return implode("\n", array_reverse($lines));
+        if ($newestFirst) {
+            $lines = array_reverse($lines);
+        }
+
+        return implode("\n", $lines);
     }
 
     public function fileSize(string $channel, string $date): ?int
@@ -180,18 +269,9 @@ class MasterActivityLogService
         return is_file($path) ? (int) filesize($path) : null;
     }
 
-    public function defaultDateForChannel(string $channel, ?string $requested): string
+    public function storagePathLabel(): string
     {
-        if ($requested && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requested)) {
-            $path = $this->filePath($channel, $requested);
-            if (is_file($path)) {
-                return $requested;
-            }
-        }
-
-        $dates = $this->datesForChannel($channel);
-
-        return $dates[0] ?? now()->format('Y-m-d');
+        return 'storage/logs/master-activity/';
     }
 
     protected function filePath(string $channel, string $date): string

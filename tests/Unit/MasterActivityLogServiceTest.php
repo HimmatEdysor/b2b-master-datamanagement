@@ -24,6 +24,11 @@ class MasterActivityLogServiceTest extends TestCase
         $this->assertStringContainsString('action=test_action', $content);
         $this->assertStringContainsString('Hello log line', $content);
 
+        $all = $service->listAllLogFiles();
+        $this->assertCount(1, $all);
+        $this->assertSame('database', $all[0]['channel']);
+        $this->assertSame($date, $all[0]['date']);
+
         $this->assertTrue($service->isValidChannel('database'));
         $this->assertFalse($service->isValidChannel('../etc'));
 
