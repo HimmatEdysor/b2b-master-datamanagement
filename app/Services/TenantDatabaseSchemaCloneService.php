@@ -12,14 +12,7 @@ class TenantDatabaseSchemaCloneService
 {
     public function adminPdo(): PDO
     {
-        TenantDbAdmin::assertCanProvision();
-
-        return new PDO(
-            sprintf('mysql:host=%s;port=%d;charset=utf8mb4', TenantDbAdmin::host(), TenantDbAdmin::port()),
-            TenantDbAdmin::username(),
-            TenantDbAdmin::password(),
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-        );
+        return TenantDbAdmin::adminPdo();
     }
 
     /**

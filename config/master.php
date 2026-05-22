@@ -41,7 +41,8 @@ return [
     'tenant_s3_enabled' => (bool) env('AWS_BUCKET'),
 
     /*
-    | Platform MySQL admin (provision only: CREATE DATABASE, mysqldump, CREATE USER).
+    | Platform MySQL admin (provision only: CREATE DATABASE, schema clone, CREATE USER).
+    | AWS RDS: set TENANT_DB_USERNAME to the RDS master user (usually not "root"). Override in Admin → Settings.
     | Each company's CRM connection is stored on the tenants row after approval — not read from here.
     */
     'tenant_db_host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),

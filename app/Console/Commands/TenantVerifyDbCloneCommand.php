@@ -27,6 +27,15 @@ class TenantVerifyDbCloneCommand extends Command
         $this->newLine();
 
         try {
+            TenantDbAdmin::adminPdo();
+            $this->info('Admin PDO connection: OK');
+        } catch (\PDOException $e) {
+            $this->error(TenantDbAdmin::connectionErrorMessage($e));
+
+            return self::FAILURE;
+        }
+
+        try {
             $inspect = $schemaClone->inspectTemplate($database);
             $this->info("Template [{$inspect['database']}]: {$inspect['tables']} tables, {$inspect['views']} views (PDO readable).");
         } catch (\Throwable $e) {

@@ -58,15 +58,21 @@ class TenantProvisionerService
      *     clone_done: bool,
      *     mysql_user_done: bool,
      *     crm_admin_done: bool,
-     *     can_resume: bool
+     *     can_resume: bool,
+     *     admin_db_error: string|null
      * }
      */
     public function provisioningProgress(Tenant $tenant): array
     {
         $databaseName = $tenant->database_name;
-        $cloneDone = $databaseName !== null
-            && $databaseName !== ''
-            && $this->tenantHasProvisionedSchema($databaseName);
+        $adminDbError = null;
+        $cloneDone = false;
+
+        if ($databaseName !== null && $databaseName !== '') {
+            $check = $this->evaluateProvisionedSchema($tenant, $databaseName);
+            $cloneDone = $check['clone_done'];
+            $adminDbError = $check['admin_db_error'];
+        }
 
         $stage = $tenant->provisioning_stage;
         $mysqlUserDone = $tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword();
@@ -105,7 +111,87 @@ class TenantProvisionerService
             'needs_retry' => $this->needsProvisioningRetry($tenant),
             'incomplete_steps' => $incompleteSteps,
             'error_message' => $errorMessage,
+            'admin_db_error' => $adminDbError,
         ];
+    }
+
+    /**
+     * @return array{clone_done: bool, admin_db_error: string|null}
+     */
+    protected function evaluateProvisionedSchema(Tenant $tenant, string $databaseName): array
+    {
+        $pdo = $this->pdoForSchemaInspection($tenant);
+
+        if ($pdo === null) {
+            return [
+                'clone_done' => $this->inferCloneDoneFromStage($tenant),
+                'admin_db_error' => 'Cannot connect with TENANT_DB_* credentials. '
+                    .'Set the RDS master user in .env (TENANT_DB_USERNAME / TENANT_DB_PASSWORD) or Admin → Settings.',
+            ];
+        }
+
+        try {
+            return [
+                'clone_done' => $this->tenantHasProvisionedSchemaOnPdo($pdo, $databaseName),
+                'admin_db_error' => null,
+            ];
+        } catch (\PDOException $e) {
+            return [
+                'clone_done' => $this->inferCloneDoneFromStage($tenant),
+                'admin_db_error' => TenantDbAdmin::connectionErrorMessage($e),
+            ];
+        }
+    }
+
+    protected function inferCloneDoneFromStage(Tenant $tenant): bool
+    {
+        if ($tenant->isDatabaseProvisioned()) {
+            return true;
+        }
+
+        return in_array($tenant->provisioning_stage, [
+            'mysql_user',
+            'seeding',
+            'crm_admin',
+            'completed',
+            'done',
+        ], true);
+    }
+
+    protected function pdoForSchemaInspection(Tenant $tenant): ?\PDO
+    {
+        if ($tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword()) {
+            $host = (string) ($tenant->database_host ?: TenantDbAdmin::host());
+            $port = (int) ($tenant->database_port ?: TenantDbAdmin::port());
+
+            try {
+                return new \PDO(
+                    sprintf('mysql:host=%s;port=%d;charset=utf8mb4', $host, $port),
+                    (string) $tenant->database_username,
+                    (string) $tenant->database_password,
+                    [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+                );
+            } catch (\PDOException) {
+                // Fall back to platform admin user.
+            }
+        }
+
+        return TenantDbAdmin::tryAdminPdo();
+    }
+
+    protected function tenantHasProvisionedSchemaOnPdo(\PDO $pdo, string $databaseName): bool
+    {
+        if (! $this->tenantDatabaseExistsOnPdo($pdo, $databaseName)) {
+            return false;
+        }
+
+        foreach ($this->requiredProvisionTables() as $table) {
+            if (! $this->tenantTableExistsOnPdo($pdo, $databaseName, $table)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function provisioningStageLabel(?string $stage): string
@@ -429,12 +515,17 @@ class TenantProvisionerService
             return false;
         }
 
-        $row = $this->adminPdo()->prepare(
-            'SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?'
-        );
-        $row->execute([$databaseName]);
+        return $this->tenantDatabaseExistsOnPdo($this->adminPdo(), $databaseName);
+    }
 
-        return (bool) $row->fetchColumn();
+    protected function tenantDatabaseExistsOnPdo(\PDO $pdo, string $databaseName): bool
+    {
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1'
+        );
+        $stmt->execute([$databaseName]);
+
+        return (bool) $stmt->fetchColumn();
     }
 
     /**
@@ -442,17 +533,7 @@ class TenantProvisionerService
      */
     protected function tenantHasProvisionedSchema(string $databaseName): bool
     {
-        if (! $this->tenantDatabaseExists($databaseName)) {
-            return false;
-        }
-
-        foreach ($this->requiredProvisionTables() as $table) {
-            if (! $this->tenantTableExists($databaseName, $table)) {
-                return false;
-            }
-        }
-
-        return true;
+        return $this->tenantHasProvisionedSchemaOnPdo($this->adminPdo(), $databaseName);
     }
 
     /**
@@ -470,7 +551,12 @@ class TenantProvisionerService
 
     protected function tenantTableExists(string $databaseName, string $table): bool
     {
-        $stmt = $this->adminPdo()->prepare(
+        return $this->tenantTableExistsOnPdo($this->adminPdo(), $databaseName, $table);
+    }
+
+    protected function tenantTableExistsOnPdo(\PDO $pdo, string $databaseName, string $table): bool
+    {
+        $stmt = $pdo->prepare(
             'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?'
         );
         $stmt->execute([$databaseName, $table]);
@@ -492,14 +578,7 @@ class TenantProvisionerService
 
     protected function adminPdo(): \PDO
     {
-        TenantDbAdmin::assertCanProvision();
-
-        return new \PDO(
-            sprintf('mysql:host=%s;port=%d;charset=utf8mb4', TenantDbAdmin::host(), TenantDbAdmin::port()),
-            TenantDbAdmin::username(),
-            TenantDbAdmin::password(),
-            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
-        );
+        return TenantDbAdmin::adminPdo();
     }
 
     public function cloneDatabase(Tenant $tenant): void

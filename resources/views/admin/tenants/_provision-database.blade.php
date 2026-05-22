@@ -12,6 +12,7 @@
     $needsRetry = $progress['needs_retry'] ?? false;
     $stageLabel = $progress['stage_label'] ?? 'Provisioning';
     $provisionError = $progress['error_message'] ?? $tenant->provision_error;
+    $adminDbError = $progress['admin_db_error'] ?? null;
     $isFailed = $tenant->status === 'failed' || ($provisionError && ($isStalled || $needsRetry));
     $heading = match (true) {
         $isFailed => 'Retry database provisioning',
@@ -32,6 +33,12 @@
         <div class="detail-alert detail-alert-error" role="alert" style="margin-bottom:12px">
             <strong>Queue is set to <code>sync</code></strong> — provisioning runs in the browser request and often times out.
             Set <code>QUEUE_CONNECTION=redis</code> in <code>.env</code>, restart <code>php artisan horizon</code>, then click Retry.
+        </div>
+    @endif
+
+    @if($adminDbError)
+        <div class="detail-alert detail-alert-error" role="alert" style="margin-bottom:12px">
+            <strong>Tenant database admin connection failed</strong> — {{ $adminDbError }}
         </div>
     @endif
 

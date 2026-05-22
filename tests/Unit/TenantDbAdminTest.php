@@ -45,6 +45,17 @@ class TenantDbAdminTest extends TestCase
     }
 
     #[Test]
+    public function connection_error_message_explains_rds_credentials(): void
+    {
+        $e = new \PDOException("SQLSTATE[HY000] [1045] Access denied for user 'root'@'10.0.0.1' (using password: YES)");
+
+        $msg = TenantDbAdmin::connectionErrorMessage($e);
+
+        $this->assertStringContainsString('TENANT_DB_USERNAME', $msg);
+        $this->assertStringContainsString('RDS', $msg);
+    }
+
+    #[Test]
     public function clone_method_accepts_mysqldump(): void
     {
         config(['master.tenant_db_clone_method' => 'mysqldump']);
