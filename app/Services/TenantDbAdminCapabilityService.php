@@ -75,14 +75,11 @@ class TenantDbAdminCapabilityService
             return;
         }
 
-        $failed = collect($audit['checks'])
-            ->filter(fn (array $c) => ! $c['ok'])
-            ->pluck('detail')
-            ->implode(' ');
+        $failed = collect($audit['checks'])->first(fn (array $c) => ! $c['ok']);
+        $detail = is_array($failed) ? ($failed['detail'] ?? $audit['summary']) : $audit['summary'];
 
         throw new \RuntimeException(
-            'Tenant database admin is not ready: '.$failed
-            .' Run `php artisan tenant:db-admin-check` on the server for details and setup SQL.'
+            'Tenant database admin is not ready: '.$detail
         );
     }
 

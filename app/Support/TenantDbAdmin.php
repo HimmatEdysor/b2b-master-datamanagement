@@ -99,16 +99,12 @@ class TenantDbAdmin
     {
         self::assertCanProvision();
 
-        try {
-            return new PDO(
-                self::dsn(),
-                self::username(),
-                self::password(),
-                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-            );
-        } catch (PDOException $e) {
-            throw new PDOException(self::connectionErrorMessage($e), (int) $e->getCode(), $e);
-        }
+        return new PDO(
+            self::dsn(),
+            self::username(),
+            self::password(),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
     }
 
     public static function tryAdminPdo(): ?PDO
@@ -137,17 +133,26 @@ class TenantDbAdmin
 
     public static function connectionErrorMessage(PDOException $e): string
     {
-        $user = self::username();
-        $host = self::host();
-
-        if ((int) $e->getCode() === 1045 || str_contains($e->getMessage(), '1045')) {
-            return "Cannot connect to tenant MySQL as `{$user}` at `{$host}`. "
-                .'On AWS RDS use your RDS master username (not `root` unless configured). '
-                .'Set TENANT_DB_USERNAME and TENANT_DB_PASSWORD in .env, or Admin → Settings → Tenant database. '
-                .'The app server IP must be allowed (RDS security group). Original: '.$e->getMessage();
+        if (str_starts_with($e->getMessage(), 'Cannot connect to tenant MySQL')) {
+            return preg_replace('/\s+Original:.*$/s', '', $e->getMessage()) ?: $e->getMessage();
         }
 
-        return 'Tenant MySQL connection failed ('.$host.'): '.$e->getMessage();
+        $user = self::username();
+        $host = self::host();
+        $raw = $e->getMessage();
+
+        if ((int) $e->getCode() === 1045 || str_contains($raw, '1045')) {
+            $hint = self::password() === ''
+                ? ' TENANT_DB_PASSWORD is empty.'
+                : ' Check the password matches MySQL (Admin → Settings → Tenant database overrides .env).';
+
+            return "Cannot connect to tenant MySQL as `{$user}` at `{$host}`.{$hint}"
+                ." User must exist as `{$user}`@'%' (or allow your app server IP in MySQL). "
+                .'Fix: run `php artisan tenant:db-admin-check` on the server. '
+                ."MySQL said: {$raw}";
+        }
+
+        return "Tenant MySQL connection failed ({$host}): {$raw}";
     }
 
     /**
