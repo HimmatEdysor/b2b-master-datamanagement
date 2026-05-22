@@ -529,12 +529,9 @@ class TenantProvisionerService
         $dump = Process::timeout($timeout)
             ->env($mysqlEnv)
             ->run($dumpCommand);
-            
 
         if (! $dump->successful()) {
-            $err = TenantDbAdmin::normalizeMysqldumpError(
-                trim($dump->errorOutput() ?: $dump->output())
-            );
+            $err = TenantDbAdmin::cliFailureMessage($dump, 'mysqldump');
             if (str_contains($err, 'timeout') || str_contains($err, 'exceeded')) {
                 $err .= ' Increase TENANT_DB_CLONE_TIMEOUT in .env (default 3000 seconds).';
             }
@@ -545,10 +542,22 @@ class TenantProvisionerService
                 $err,
                 $tenant,
                 null,
-                ['command' => implode(' ', $dumpCommand), 'from' => $from, 'to' => $to]
+                [
+                    'command' => implode(' ', $dumpCommand),
+                    'exit_code' => $dump->exitCode(),
+                    'from' => $from,
+                    'to' => $to,
+                ]
             );
 
-            throw new \RuntimeException($err !== '' ? $err : 'mysqldump failed');
+            throw new \RuntimeException($err);
+        }
+
+        if (trim($dump->output()) === '') {
+            throw new \RuntimeException(
+                'mysqldump succeeded but produced empty output. Check template database name ('
+                .config('master.template_database').') and permissions.'
+            );
         }
 
         $import = Process::timeout($timeout)

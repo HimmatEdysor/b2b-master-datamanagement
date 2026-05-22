@@ -55,9 +55,7 @@ class TenantCloneDatabaseCommand extends Command
             ->run(TenantDbAdmin::mysqldumpCommand($from, schemaOnly: true));
 
         if (! $dump->successful()) {
-            $this->error(TenantDbAdmin::normalizeMysqldumpError(
-                trim($dump->errorOutput() ?: $dump->output())
-            ));
+            $this->error(TenantDbAdmin::cliFailureMessage($dump, 'mysqldump'));
 
             return self::FAILURE;
         }

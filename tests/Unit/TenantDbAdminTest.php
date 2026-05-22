@@ -55,4 +55,25 @@ class TenantDbAdminTest extends TestCase
         $this->assertContains('--no-tablespaces', $flags);
         $this->assertContains('--no-data', $flags);
     }
+
+    #[Test]
+    public function strip_mysql_cli_noise_removes_password_warning(): void
+    {
+        $raw = "mysqldump: [Warning] Using a password on the command line interface can be insecure.\n"
+            ."mysqldump: Couldn't execute 'FLUSH TABLES': Access denied (1227)";
+
+        $clean = TenantDbAdmin::stripMysqlCliNoise($raw);
+
+        $this->assertStringNotContainsString('password on the command line', $clean);
+        $this->assertStringContainsString('FLUSH TABLES', $clean);
+    }
+
+    #[Test]
+    public function normalize_mysqldump_error_maps_flush_tables_to_rds_hint(): void
+    {
+        $msg = TenantDbAdmin::normalizeMysqldumpError("FLUSH TABLES Access denied 1227");
+
+        $this->assertStringContainsString('--skip-lock-tables', $msg);
+        $this->assertStringContainsString('horizon:terminate', $msg);
+    }
 }

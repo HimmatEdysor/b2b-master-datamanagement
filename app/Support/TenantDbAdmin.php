@@ -91,7 +91,6 @@ class TenantDbAdmin
         ];
 
         if ($schemaOnly) {
-            
             $flags[] = '--no-data';
         }
 
@@ -124,6 +123,51 @@ class TenantDbAdmin
             ],
             $args
         );
+    }
+
+    /**
+     * Remove stderr noise that is not a failure (mysqldump still exits non-zero for real errors).
+     */
+    public static function stripMysqlCliNoise(string $text): string
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+        $kept = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (preg_match('/password on the command line interface can be insecure/i', $line)) {
+                continue;
+            }
+            if (preg_match('/^\[Warning\]/i', $line)) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        return implode("\n", $kept);
+    }
+
+    /**
+     * Build a failure message from a failed mysql/mysqldump process (exit code is authoritative).
+     */
+    public static function cliFailureMessage(
+        \Illuminate\Contracts\Process\ProcessResult $result,
+        string $tool = 'mysqldump'
+    ): string {
+        $raw = trim($result->errorOutput()."\n".$result->output());
+        $message = self::stripMysqlCliNoise($raw);
+
+        if ($message === '') {
+            $message = "{$tool} failed with no output (exit code ".$result->exitCode().'). '
+                .'Check TENANT_DB_* credentials, that mysqldump is installed, and Horizon is running the latest code.';
+        } else {
+            $message = "{$tool} failed (exit code ".$result->exitCode()."): ".$message;
+        }
+
+        return self::normalizeMysqldumpError($message);
     }
 
     public static function normalizeMysqldumpError(string $error): string
