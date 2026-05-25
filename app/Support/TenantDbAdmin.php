@@ -235,13 +235,17 @@ class TenantDbAdmin
         $raw = $e->getMessage();
 
         if ((int) $e->getCode() === 1045 || str_contains($raw, '1045')) {
-            $hint = self::password() === ''
-                ? ' TENANT_DB_PASSWORD is empty.'
-                : ' Check the password matches MySQL (Admin → Settings → Tenant database overrides .env).';
+            $source = app(\App\Services\MasterSettingsService::class)->tenantDbPasswordSource();
+            $hint = match ($source) {
+                'master_settings' => ' Password is from Admin → Web settings (overrides .env). Update it there or run the RDS setup SQL with the same password.',
+                'env_tenant' => ' Password is from TENANT_DB_PASSWORD in .env — must match MySQL.',
+                'env_db_fallback' => ' Password is from DB_PASSWORD (TENANT_DB_PASSWORD empty) — must match MySQL user `'.$user.'`.',
+                default => ' TENANT_DB_PASSWORD is empty.',
+            };
 
             return "Cannot connect to tenant MySQL as `{$user}` at `{$host}`.{$hint}"
-                ." User must exist as `{$user}`@'%' (or allow your app server IP in MySQL). "
-                .'Fix: run `php artisan tenant:db-admin-check` on the server. '
+                ." User must exist as `{$user}`@'%' (MySQL matches `{$user}`@'<app-server-ip>' to `{$user}`@'%'). "
+                .'Fix: Admin → Web settings → Test connection, or `php artisan tenant:db-admin-check` on the server. '
                 ."MySQL said: {$raw}";
         }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\MasterSettingsService;
+use App\Services\TenantDbAdminCapabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -12,6 +13,7 @@ class MasterSettingsController extends Controller
 {
     public function __construct(
         protected MasterSettingsService $settings,
+        protected TenantDbAdminCapabilityService $tenantDbCapabilities,
     ) {}
 
     public function edit(): View
@@ -53,5 +55,14 @@ class MasterSettingsController extends Controller
         return redirect()
             ->route('admin.settings.edit')
             ->with('success', 'Web settings saved. Values apply immediately (overrides .env when set).');
+    }
+
+    public function checkTenantDatabase(): RedirectResponse
+    {
+        $audit = $this->tenantDbCapabilities->audit();
+
+        return redirect()
+            ->route('admin.settings.edit')
+            ->with('tenant_db_audit', $audit);
     }
 }

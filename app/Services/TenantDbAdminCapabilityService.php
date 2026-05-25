@@ -17,7 +17,7 @@ class TenantDbAdminCapabilityService
      *     summary: string,
      *     checks: list<array{name: string, ok: bool, detail: string}>,
      *     setup_sql: string,
-     *     config: array{host: string, port: int, user: string, template: string}
+     *     config: array{host: string, port: int, user: string, template: string, password_source: string}
      * }
      */
     public function audit(): array
@@ -28,6 +28,7 @@ class TenantDbAdminCapabilityService
             'port' => TenantDbAdmin::port(),
             'user' => TenantDbAdmin::username(),
             'template' => $template,
+            'password_source' => app(MasterSettingsService::class)->tenantDbPasswordSource(),
         ];
 
         $checks = [];
@@ -85,7 +86,7 @@ class TenantDbAdminCapabilityService
 
     /**
      * @param  list<array{name: string, ok: bool, detail: string}>  $checks
-     * @return array{ok: bool, summary: string, checks: list<array{name: string, ok: bool, detail: string}>, setup_sql: string, config: array{host: string, port: int, user: string, template: string}}
+     * @return array{ok: bool, summary: string, checks: list<array{name: string, ok: bool, detail: string}>, setup_sql: string, config: array{host: string, port: int, user: string, template: string, password_source: string}}
      */
     protected function result(bool $ok, array $checks, array $config): array
     {
@@ -120,11 +121,29 @@ class TenantDbAdminCapabilityService
             return ['name' => 'config', 'ok' => false, 'detail' => 'TENANT_DB_PASSWORD is empty for remote host '.$host.'.'];
         }
 
+        $source = app(MasterSettingsService::class)->tenantDbPasswordSource();
+        $sourceLabel = match ($source) {
+            'master_settings' => 'password from Admin → Web settings (overrides .env)',
+            'env_tenant' => 'password from TENANT_DB_PASSWORD in .env',
+            'env_db_fallback' => 'password from DB_PASSWORD (.env fallback — TENANT_DB_PASSWORD empty)',
+            default => 'no password configured',
+        };
+
         return [
             'name' => 'config',
             'ok' => true,
-            'detail' => "Using admin user `{$user}` @ `{$host}` (from .env or Admin → Settings).",
+            'detail' => "Using admin user `{$user}` @ `{$host}` ({$sourceLabel}).",
         ];
+    }
+
+    public function passwordSourceHint(string $source): string
+    {
+        return match ($source) {
+            'master_settings' => 'Update MySQL admin password in Web settings below, or clear the password field and save to use .env again.',
+            'env_tenant' => 'Set TENANT_DB_PASSWORD in .env on the app server, then run `php artisan config:clear`.',
+            'env_db_fallback' => 'Set TENANT_DB_PASSWORD in .env (recommended) or ensure DB_PASSWORD matches the MySQL user `'.TenantDbAdmin::username().'`.',
+            default => 'Set TENANT_DB_PASSWORD in .env or Admin → Web settings.',
+        };
     }
 
     /**

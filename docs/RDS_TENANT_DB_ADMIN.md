@@ -74,7 +74,26 @@ Defaults are in `config/master.php`.
 
 ## Error 1045
 
-`Access denied for 'b2b_master'@'172.31.x.x'` — fix password, `'user'@'%'`, and security group before provisioning.
+`Access denied for 'b2b_master'@'172.31.x.x'` — the app reached RDS but MySQL rejected the login.
+
+1. **Password** — must match in MySQL and in app config. Check **Admin → Web settings → MySQL admin password** first (saved values override `.env`). Then `TENANT_DB_PASSWORD` in `.env`. If both are empty, the app uses `DB_PASSWORD`.
+2. **User host** — create `'b2b_master'@'%'` (not only `@'localhost'`). EC2 private IPs like `172.31.x.x` match `@'%'`.
+3. **Reset password on RDS** (as RDS master user), then mirror in settings / `.env`:
+
+```sql
+ALTER USER 'b2b_master'@'%' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
+FLUSH PRIVILEGES;
+```
+
+4. **Verify** — Admin → Web settings → **Test tenant MySQL connection**, or on the server:
+
+```bash
+php artisan config:clear
+php artisan tenant:db-admin-check
+php artisan horizon:terminate
+```
+
+5. **Security group** — RDS must allow inbound 3306 from the app server (if you get timeout, not 1045, fix SG first).
 
 ## Skip per-DB GRANT step
 

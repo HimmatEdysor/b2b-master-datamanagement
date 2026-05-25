@@ -27,9 +27,14 @@ class TenantDbAdminCheckCommand extends Command
         $this->line('Host: '.$audit['config']['host'].':'.$audit['config']['port']);
         $this->line('User: '.$audit['config']['user']);
         $this->line('Template: '.$audit['config']['template']);
+        $this->line('Password source: '.$audit['config']['password_source']);
 
         if (! $audit['ok']) {
             $this->newLine();
+            $source = $audit['config']['password_source'] ?? '';
+            if ($source !== '') {
+                $this->warn(app(TenantDbAdminCapabilityService::class)->passwordSourceHint($source));
+            }
             $this->warn('If connection fails (1045): password wrong, user missing, or host not allowed from app server.');
             $this->warn('Use @\'%\' (any host) for EC2 → RDS, not only @\'localhost\'.');
             $this->newLine();

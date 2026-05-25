@@ -100,6 +100,30 @@ class MasterSettingsService
     }
 
     /**
+     * Where the effective tenant DB admin password comes from (for diagnostics).
+     */
+    public function tenantDbPasswordSource(): string
+    {
+        $stored = $this->storedMap()['tenant_db_password'] ?? null;
+
+        if ($stored !== null && $stored !== '') {
+            return 'master_settings';
+        }
+
+        $tenantPass = env('TENANT_DB_PASSWORD');
+        if ($tenantPass !== null && $tenantPass !== '') {
+            return 'env_tenant';
+        }
+
+        $dbPass = env('DB_PASSWORD');
+        if ($dbPass !== null && $dbPass !== '') {
+            return 'env_db_fallback';
+        }
+
+        return 'empty';
+    }
+
+    /**
      * @return array<string, string|null>
      */
     protected function storedMap(): array

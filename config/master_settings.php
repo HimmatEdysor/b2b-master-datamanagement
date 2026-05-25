@@ -17,7 +17,7 @@ return [
         ],
         'database' => [
             'label' => 'Database provisioning',
-            'description' => 'MySQL used when approving companies (CREATE DATABASE / users). Not per-company CRM credentials.',
+            'description' => 'MySQL used when approving companies (CREATE DATABASE / users). Not per-company CRM credentials. On AWS RDS use a dedicated user (e.g. b2b_master) with @\'%\' — see docs/RDS_TENANT_DB_ADMIN.md.',
         ],
         'crm' => [
             'label' => 'Tenant CRM app',
@@ -201,7 +201,7 @@ return [
             'label' => 'MySQL admin password',
             'config' => 'tenant_db_password',
             'type' => 'password',
-            'hint' => 'Leave blank to keep current value',
+            'hint' => 'Must match MySQL for the admin user above. Overrides .env when saved. Leave blank when saving other fields to keep the current password.',
         ],
         'tenant_db_user_hosts' => [
             'section' => 'database',

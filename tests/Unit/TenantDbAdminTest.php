@@ -51,8 +51,10 @@ class TenantDbAdminTest extends TestCase
 
         $msg = TenantDbAdmin::connectionErrorMessage($e);
 
-        $this->assertStringContainsString('TENANT_DB_USERNAME', $msg);
-        $this->assertStringContainsString('RDS', $msg);
+        $this->assertStringContainsString('Cannot connect to tenant MySQL', $msg);
+        $this->assertStringContainsString("user 'root'", $msg);
+        $this->assertStringContainsString("'%'", $msg);
+        $this->assertStringContainsString('tenant:db-admin-check', $msg);
     }
 
     #[Test]

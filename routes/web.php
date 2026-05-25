@@ -172,6 +172,9 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::put('settings', [MasterSettingsController::class, 'update'])
             ->middleware('permission:settings.edit')
             ->name('settings.update');
+        Route::post('settings/tenant-db-check', [MasterSettingsController::class, 'checkTenantDatabase'])
+            ->middleware('permission:settings.edit')
+            ->name('settings.tenant-db-check');
     });
 });
 
