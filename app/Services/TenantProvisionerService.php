@@ -783,7 +783,7 @@ class TenantProvisionerService
 
     public function reserveDatabaseName(string $slug): string
     {
-        return config('master.tenant_database_prefix').Str::slug($slug, '');
+        return TenantDbAdmin::tenantDatabaseNameFromSlug($slug);
     }
 
     /**

@@ -37,6 +37,22 @@ php artisan config:clear
 php artisan tenant:db-admin-check
 ```
 
+## Error 1044 on provision check database
+
+The self-check uses the **same name pattern** as real tenants: `b2b_tenant_{slug}` (default slug `provisioncheck` → `b2b_tenant_provisioncheck`). If `b2b_master` only has privileges on `b2b_tenant_%`.* but not `CREATE` on `*.*`, that fails with **1044**.
+
+**Fix:** grant global CREATE + DROP (required to run `CREATE DATABASE`):
+
+```sql
+GRANT CREATE, DROP, ALTER, INDEX, CREATE USER, PROCESS ON *.* TO 'b2b_master'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX,
+  CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, REFERENCES
+  ON `b2b_tenant_%`.* TO 'b2b_master'@'%';
+FLUSH PRIVILEGES;
+```
+
+If per-DB `GRANT` is blocked on RDS (no GRANT OPTION), pre-grant `b2b_tenant_%`.* as above and optionally set `TENANT_DB_GRANT_ADMIN_ON_CREATE=false`.
+
 ## Provisioning order (per company)
 
 1. Reserve `b2b_tenant_{slug}` on company row  

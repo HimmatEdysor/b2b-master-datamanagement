@@ -125,6 +125,12 @@ return [
     'tenant_database_prefix' => env('TENANT_DATABASE_PREFIX', 'b2b_tenant_'),
 
     /*
+    | Reserved company slug for tenant:db-admin-check only (database = prefix + slug).
+    | Do not create a real tenant with this slug.
+    */
+    'tenant_provision_check_slug' => env('TENANT_PROVISION_CHECK_SLUG', 'provisioncheck'),
+
+    /*
     | Absolute path to the tenant-facing CRM Laravel app (directory containing artisan).
     | Bulk “migrate databases” runs `php artisan migrate --force` there with DB_* per tenant.
     | If TENANT_CRM_PATH is unset and this app lives in a subfolder (e.g. …/B2B_CRM/master-portal),

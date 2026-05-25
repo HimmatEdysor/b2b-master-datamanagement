@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Str;
 use PDO;
 use PDOException;
 
@@ -270,6 +271,41 @@ class TenantDbAdmin
     public static function shouldGrantAdminOnCreate(): bool
     {
         return (bool) config('master.tenant_db_grant_admin_on_create', true);
+    }
+
+    public static function tenantDatabasePrefix(): string
+    {
+        return (string) config('master.tenant_database_prefix', 'b2b_tenant_');
+    }
+
+    /** Wildcard used in RDS GRANT ON `prefix%`.* */
+    public static function tenantDatabaseGrantPattern(): string
+    {
+        return self::tenantDatabasePrefix().'%';
+    }
+
+    /**
+     * Same naming as real companies: prefix + slug (see TenantProvisionerService::reserveDatabaseName).
+     */
+    public static function tenantDatabaseNameFromSlug(string $slug): string
+    {
+        return self::tenantDatabasePrefix().Str::slug($slug, '');
+    }
+
+    /**
+     * Reserved slug for RDS self-check only — do not register a company with this slug.
+     */
+    public static function provisionCheckSlug(): string
+    {
+        return (string) config('master.tenant_provision_check_slug', 'provisioncheck');
+    }
+
+    /**
+     * Temporary DB for tenant:db-admin-check (same pattern as b2b_tenant_{company_slug}).
+     */
+    public static function provisionCheckDatabaseName(): string
+    {
+        return self::tenantDatabaseNameFromSlug(self::provisionCheckSlug());
     }
 
     /**

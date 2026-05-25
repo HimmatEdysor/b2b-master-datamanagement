@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\TenantDbAdminCapabilityService;
+use App\Support\TenantDbAdmin;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -23,5 +24,18 @@ class TenantDbAdminCapabilityServiceTest extends TestCase
         $this->assertStringContainsString('CREATE USER', $sql);
         $this->assertStringContainsString('GRANT CREATE', $sql);
         $this->assertStringContainsString('b2b_tenant_%', $sql);
+    }
+
+    #[Test]
+    public function provision_check_database_name_matches_real_tenant_pattern(): void
+    {
+        config([
+            'master.tenant_database_prefix' => 'b2b_tenant_',
+            'master.tenant_provision_check_slug' => 'provisioncheck',
+        ]);
+
+        $this->assertSame('b2b_tenant_edysor', TenantDbAdmin::tenantDatabaseNameFromSlug('edysor'));
+        $this->assertSame('b2b_tenant_provisioncheck', TenantDbAdmin::provisionCheckDatabaseName());
+        $this->assertSame('b2b_tenant_%', TenantDbAdmin::tenantDatabaseGrantPattern());
     }
 }

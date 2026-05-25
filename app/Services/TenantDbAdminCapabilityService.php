@@ -56,10 +56,6 @@ class TenantDbAdminCapabilityService
         $checks[] = $this->checkTemplateDatabase($pdo, $template);
         $checks[] = $this->checkCreateDropDatabase($pdo);
 
-        if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
-            $checks[] = $this->checkGrantOnNewDatabase($pdo);
-        }
-
         $ok = collect($checks)->every(fn (array $c) => $c['ok']);
 
         return $this->result($ok, $checks, $config);
@@ -241,14 +237,17 @@ class TenantDbAdminCapabilityService
      */
     protected function checkCreateDropDatabase(PDO $pdo): array
     {
-        $testDb = '__master_provision_check_'.bin2hex(random_bytes(4));
+        $testDb = TenantDbAdmin::provisionCheckDatabaseName();
         $quoted = TenantDbAdmin::quoteIdentifier($testDb);
+        $wildcard = TenantDbAdmin::tenantDatabaseGrantPattern();
 
         try {
+            $this->dropProvisionCheckDatabaseIfExists($pdo, $testDb);
             $pdo->exec("CREATE DATABASE {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
+            $grantDetail = '';
             if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
-                TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $testDb);
+                $grantDetail = $this->tryGrantAdminOnProvisionCheckDatabase($pdo, $testDb);
             }
 
             $pdo->exec("DROP DATABASE {$quoted}");
@@ -256,51 +255,72 @@ class TenantDbAdminCapabilityService
             return [
                 'name' => 'create_drop_database',
                 'ok' => true,
-                'detail' => TenantDbAdmin::shouldGrantAdminOnCreate()
-                    ? 'Can CREATE DATABASE, GRANT admin on it, and DROP.'
-                    : 'Can CREATE and DROP a test database.',
+                'detail' => 'Created and dropped test database `'.$testDb.'`.'
+                    .($grantDetail !== '' ? ' '.$grantDetail : ''),
             ];
         } catch (PDOException $e) {
+            $this->dropProvisionCheckDatabaseIfExists($pdo, $testDb);
+
             return [
                 'name' => 'create_drop_database',
                 'ok' => false,
-                'detail' => 'CREATE/GRANT/DROP DATABASE test failed: '.$e->getMessage()
-                    .' RDS master must grant CREATE,DROP,CREATE USER on *.* and database privileges on b2b_tenant_% (see tenant:db-admin-check).',
+                'detail' => $this->createDropDatabaseFailureDetail($e, $testDb, $wildcard),
             ];
         }
     }
 
     /**
-     * @return array{name: string, ok: bool, detail: string}
+     * RDS often blocks GRANT without GRANT OPTION — OK when `b2b_tenant_%`.* is pre-granted.
      */
-    protected function checkGrantOnNewDatabase(PDO $pdo): array
+    protected function tryGrantAdminOnProvisionCheckDatabase(PDO $pdo, string $testDb): string
     {
-        $testDb = '__master_grant_check_'.bin2hex(random_bytes(4));
-        $quoted = TenantDbAdmin::quoteIdentifier($testDb);
-
         try {
-            $pdo->exec("CREATE DATABASE {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $testDb);
-            $pdo->exec("DROP DATABASE {$quoted}");
 
-            return [
-                'name' => 'grant_admin_on_tenant_db',
-                'ok' => true,
-                'detail' => 'Can GRANT `'.TenantDbAdmin::username().'` on a new tenant database (or already has global access).',
-            ];
-        } catch (\PDOException $e) {
-            try {
-                $pdo->exec("DROP DATABASE IF EXISTS {$quoted}");
-            } catch (\PDOException) {
+            return 'Per-database GRANT succeeded.';
+        } catch (PDOException $e) {
+            if ($this->hasTenantDatabaseWildcardGrant($pdo)) {
+                return 'Per-database GRANT skipped (already has `'.TenantDbAdmin::tenantDatabaseGrantPattern().'` from RDS).';
             }
 
-            return [
-                'name' => 'grant_admin_on_tenant_db',
-                'ok' => false,
-                'detail' => 'GRANT on new tenant DB failed: '.$e->getMessage()
-                    .' Pre-grant `b2b_tenant_%`.* with specific privileges, or set TENANT_DB_GRANT_ADMIN_ON_CREATE=false.',
-            ];
+            throw $e;
         }
+    }
+
+    protected function hasTenantDatabaseWildcardGrant(PDO $pdo): bool
+    {
+        $pattern = TenantDbAdmin::tenantDatabaseGrantPattern();
+        $grantText = $this->showGrantsText($pdo);
+
+        return str_contains($grantText, 'ON `'.$pattern.'`')
+            || str_contains($grantText, "ON `{$pattern}`");
+    }
+
+    protected function dropProvisionCheckDatabaseIfExists(PDO $pdo, string $databaseName): void
+    {
+        $quoted = TenantDbAdmin::quoteIdentifier($databaseName);
+
+        try {
+            $pdo->exec("DROP DATABASE IF EXISTS {$quoted}");
+        } catch (PDOException) {
+        }
+    }
+
+    protected function createDropDatabaseFailureDetail(
+        PDOException $e,
+        string $testDb,
+        string $wildcard
+    ): string {
+        $msg = $e->getMessage();
+        $hint = 'Run as RDS master: GRANT CREATE, DROP, CREATE USER ON *.* TO `'.TenantDbAdmin::username()."`@'%'; "
+            ."GRANT … ON `{$wildcard}`.* TO `".TenantDbAdmin::username()."`@'%'; "
+            .'Test databases use prefix `'.TenantDbAdmin::tenantDatabasePrefix().'`.';
+
+        if (str_contains($msg, '1044')) {
+            $hint .= ' Error 1044 usually means missing CREATE on *.* or grants only on `'.$wildcard.'` without global CREATE.';
+        }
+
+        return 'CREATE/GRANT/DROP test on `'.$testDb.'` failed: '.$msg.' '.$hint;
     }
 
     public function rdsSetupSql(string $username, string $template): string
