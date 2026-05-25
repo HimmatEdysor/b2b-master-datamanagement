@@ -124,14 +124,9 @@ class TenantProvisionerService
         $pdo = $this->pdoForSchemaInspection($tenant);
 
         if ($pdo === null) {
-            $audit = $this->dbCapabilities->audit();
-            $failed = collect($audit['checks'])->first(fn (array $c) => ! $c['ok']);
-            $detail = is_array($failed) ? ($failed['detail'] ?? '') : '';
-
             return [
                 'clone_done' => $this->inferCloneDoneFromStage($tenant),
-                'admin_db_error' => trim($audit['summary'].' '.$detail)
-                    .' Run `php artisan tenant:db-admin-check` on the server.',
+                'admin_db_error' => $this->adminMysqlUnavailableMessage(),
             ];
         }
 
@@ -165,6 +160,10 @@ class TenantProvisionerService
 
     protected function pdoForSchemaInspection(Tenant $tenant): ?\PDO
     {
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            return TenantDbAdmin::tryAdminPdo();
+        }
+
         if ($tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword()) {
             $host = (string) ($tenant->database_host ?: TenantDbAdmin::host());
             $port = (int) ($tenant->database_port ?: TenantDbAdmin::port());
@@ -182,6 +181,18 @@ class TenantProvisionerService
         }
 
         return TenantDbAdmin::tryAdminPdo();
+    }
+
+    protected function adminMysqlUnavailableMessage(): string
+    {
+        try {
+            TenantDbAdmin::adminPdo();
+        } catch (\PDOException $e) {
+            return TenantDbAdmin::connectionErrorMessage($e)
+                .' Fix in Admin → Web settings (MySQL host / user / password), then run `php artisan tenant:db-admin-check`.';
+        }
+
+        return 'Tenant MySQL admin connection failed. Run `php artisan tenant:db-admin-check` on the server.';
     }
 
     protected function tenantHasProvisionedSchemaOnPdo(\PDO $pdo, string $databaseName): bool

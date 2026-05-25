@@ -12,7 +12,7 @@ use PDOException;
 class TenantDbAdminCapabilityService
 {
     /** Bump when provision-check / grant parsing changes (grep on server to confirm deploy). */
-    public const CHECK_BUILD = '2026-05-26-grant-then-use';
+    public const CHECK_BUILD = '2026-05-26-shared-rds';
     /**
      * @return array{
      *     ok: bool,
@@ -288,20 +288,18 @@ class TenantDbAdminCapabilityService
 
         try {
             $this->dropProvisionCheckDatabaseIfExists($pdo, $testDb);
-            $pdo->exec("CREATE DATABASE {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $pdo->exec(
+                "CREATE DATABASE IF NOT EXISTS {$quoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            );
 
-            $grantDetail = '';
-            if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
-                $grantDetail = $this->tryGrantAdminOnProvisionCheckDatabase($pdo, $testDb);
-            }
+            $grantDetail = $this->tryGrantAdminOnProvisionCheckDatabase($pdo, $testDb);
 
-            $pdo->exec("DROP DATABASE {$quoted}");
+            $dropDetail = $this->dropProvisionCheckDatabaseForAudit($pdo, $testDb);
 
             return [
                 'name' => 'create_drop_database',
                 'ok' => true,
-                'detail' => 'Created and dropped test database `'.$testDb.'`.'
-                    .($grantDetail !== '' ? ' '.$grantDetail : ''),
+                'detail' => 'Created test database `'.$testDb.'`. '.$grantDetail.' '.$dropDetail,
             ];
         } catch (PDOException $e) {
             $this->dropProvisionCheckDatabaseIfExists($pdo, $testDb);
@@ -310,6 +308,14 @@ class TenantDbAdminCapabilityService
                 'name' => 'create_drop_database',
                 'ok' => false,
                 'detail' => $this->createDropDatabaseFailureDetail($e, $testDb, $wildcard),
+            ];
+        } catch (\RuntimeException $e) {
+            $this->dropProvisionCheckDatabaseIfExists($pdo, $testDb);
+
+            return [
+                'name' => 'create_drop_database',
+                'ok' => false,
+                'detail' => $e->getMessage(),
             ];
         }
     }
@@ -333,6 +339,19 @@ class TenantDbAdminCapabilityService
         try {
             $pdo->exec("DROP DATABASE IF EXISTS {$quoted}");
         } catch (PDOException) {
+        }
+    }
+
+    protected function dropProvisionCheckDatabaseForAudit(PDO $pdo, string $databaseName): string
+    {
+        $quoted = TenantDbAdmin::quoteIdentifier($databaseName);
+
+        try {
+            $pdo->exec("DROP DATABASE IF EXISTS {$quoted}");
+
+            return 'Dropped test database.';
+        } catch (PDOException $e) {
+            return 'DROP skipped (CREATE + USE already verified). You may manually drop `'.$databaseName.'` if it still exists.';
         }
     }
 

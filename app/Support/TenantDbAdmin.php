@@ -270,6 +270,10 @@ class TenantDbAdmin
 
     public static function shouldGrantAdminOnCreate(): bool
     {
+        if (self::usesSharedTenantCredentials()) {
+            return false;
+        }
+
         return (bool) config('master.tenant_db_grant_admin_on_create', false);
     }
 

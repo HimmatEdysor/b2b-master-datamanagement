@@ -215,7 +215,7 @@ return [
             'label' => 'GRANT admin on each new tenant DB',
             'config' => 'tenant_db_grant_admin_on_create',
             'type' => 'boolean',
-            'hint' => 'Disable when b2b_tenant_%.* is already granted on RDS (recommended).',
+            'hint' => 'Ignored when shared MySQL user is enabled. Leave off on RDS (use b2b_tenant_% wildcard).',
         ],
         'tenant_db_user_hosts' => [
             'section' => 'database',
