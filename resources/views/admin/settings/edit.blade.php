@@ -74,6 +74,20 @@
                 <p class="form-hint section-lead">{{ $section['description'] }}</p>
             @endif
 
+            @if($sectionKey === 'database')
+                @php
+                    $sharedOn = \App\Support\TenantDbAdmin::usesSharedTenantCredentials();
+                @endphp
+                <div class="detail-alert {{ $sharedOn ? 'detail-alert-success' : 'detail-alert-error' }}" role="status" style="margin:0 0 1rem">
+                    <strong>Shared MySQL user (RDS):</strong>
+                    @if($sharedOn)
+                        Enabled — all companies use <code>{{ \App\Support\TenantDbAdmin::username() }}</code> with <code>{{ \App\Support\TenantDbAdmin::tenantDatabaseGrantPattern() }}</code>.
+                    @else
+                        Disabled — enable <strong>Use shared MySQL user for all tenants (RDS)</strong> below (or set <code>TENANT_DB_SHARED_CREDENTIALS=true</code> in <code>.env</code>), then save.
+                    @endif
+                </div>
+            @endif
+
             @if($sectionKey === 'database' && master_can('settings.edit'))
                 <div class="form-actions" style="margin:0 0 1rem;padding:0;border:none">
                     <form method="POST" action="{{ route('admin.settings.tenant-db-check') }}" class="inline-form">

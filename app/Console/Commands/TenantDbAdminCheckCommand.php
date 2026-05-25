@@ -31,7 +31,11 @@ class TenantDbAdminCheckCommand extends Command
         $this->line('User: '.$audit['config']['user']);
         $this->line('Template: '.$audit['config']['template']);
         $this->line('Password source: '.$audit['config']['password_source']);
-        $this->line('Shared tenant credentials: '.(TenantDbAdmin::usesSharedTenantCredentials() ? 'yes (RDS)' : 'no (dedicated user per company)'));
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            $this->line('Shared tenant credentials: yes (b2b_master for every b2b_tenant_* database)');
+        } else {
+            $this->warn('Shared tenant credentials: no — for RDS set TENANT_DB_SHARED_CREDENTIALS=true or Web settings → Use shared MySQL user');
+        }
 
         if (! $audit['ok']) {
             $this->newLine();

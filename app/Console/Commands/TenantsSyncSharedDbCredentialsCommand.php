@@ -15,7 +15,21 @@ class TenantsSyncSharedDbCredentialsCommand extends Command
     public function handle(): int
     {
         if (! TenantDbAdmin::usesSharedTenantCredentials()) {
-            $this->error('Enable TENANT_DB_SHARED_CREDENTIALS=true (or Web settings → Use shared MySQL user) first.');
+            $this->error('Shared MySQL user mode is OFF.');
+            $this->newLine();
+            $this->line('Enable one of these, then run this command again:');
+            $this->newLine();
+            $this->line('  <fg=cyan>Option A — .env</> on the app server:');
+            $this->line('    TENANT_DB_SHARED_CREDENTIALS=true');
+            $this->line('    php artisan config:clear');
+            $this->newLine();
+            $this->line('  <fg=cyan>Option B — Admin UI</>:');
+            $this->line('    Web settings → Database provisioning');
+            $this->line('    → check <fg=yellow>Use shared MySQL user for all tenants (RDS)</>');
+            $this->line('    → Save web settings');
+            $this->newLine();
+            $this->line('Also recommended on RDS:');
+            $this->line('    TENANT_DB_GRANT_ADMIN_ON_CREATE=false');
 
             return self::FAILURE;
         }
