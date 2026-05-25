@@ -324,6 +324,82 @@ class TenantDbAdmin
         self::flushPrivilegesIfAllowed($pdo);
     }
 
+    /**
+     * After CREATE DATABASE: GRANT on this DB (if enabled), flush privileges, verify USE works.
+     * RDS often allows CREATE on *.* but not USE until `b2b_tenant_%`.* (or per-DB GRANT) exists.
+     *
+     * @return bool true when per-database GRANT ran; false when skipped or pre-granted wildcard only
+     *
+     * @throws \RuntimeException when the admin user still cannot access the database (1044)
+     */
+    public static function grantAndVerifyAdminAccessToTenantDatabase(PDO $pdo, string $databaseName): bool
+    {
+        $granted = false;
+
+        if (self::shouldGrantAdminOnCreate()) {
+            try {
+                self::grantAdminOnTenantDatabase($pdo, $databaseName);
+                $granted = true;
+            } catch (PDOException $e) {
+                if (! self::adminHasWildcardTenantDatabaseGrant($pdo)) {
+                    throw new \RuntimeException(
+                        self::databaseAccessDeniedMessage($databaseName, $e->getMessage()),
+                        0,
+                        $e
+                    );
+                }
+            }
+        }
+
+        self::flushPrivilegesIfAllowed($pdo);
+
+        if (! self::adminCanUseDatabase($pdo, $databaseName)) {
+            throw new \RuntimeException(self::databaseAccessDeniedMessage($databaseName));
+        }
+
+        return $granted;
+    }
+
+    public static function adminHasWildcardTenantDatabaseGrant(PDO $pdo): bool
+    {
+        $needle = 'ON `'.self::tenantDatabaseGrantPattern().'`';
+        $rows = $pdo->query('SHOW GRANTS FOR CURRENT_USER')->fetchAll(PDO::FETCH_NUM);
+
+        foreach ($rows as $row) {
+            if (str_contains((string) ($row[0] ?? ''), $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function adminCanUseDatabase(PDO $pdo, string $databaseName): bool
+    {
+        try {
+            $pdo->exec('USE '.self::quoteIdentifier($databaseName));
+
+            return true;
+        } catch (PDOException) {
+            return false;
+        }
+    }
+
+    public static function databaseAccessDeniedMessage(string $databaseName, ?string $mysqlError = null): string
+    {
+        $user = self::username();
+        $pattern = self::tenantDatabaseGrantPattern();
+        $message = "Database `{$databaseName}` was created but `{$user}` cannot access it yet.";
+        if ($mysqlError !== null && $mysqlError !== '') {
+            $message .= ' MySQL: '.$mysqlError;
+        }
+
+        return $message.' On RDS (as master user), grant tenant DB privileges, then retry provisioning: '
+            ."GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, "
+            .'CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, REFERENCES '
+            ."ON `{$pattern}`.* TO `{$user}`@'%'; FLUSH PRIVILEGES;";
+    }
+
     public static function createTenantDatabase(PDO $pdo, string $databaseName): void
     {
         $quoted = self::quoteIdentifier($databaseName);

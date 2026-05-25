@@ -53,11 +53,26 @@ FLUSH PRIVILEGES;
 
 If per-DB `GRANT` is blocked on RDS (no GRANT OPTION), pre-grant `b2b_tenant_%`.* as above and optionally set `TENANT_DB_GRANT_ADMIN_ON_CREATE=false`.
 
+## Error 1044 on `b2b_tenant_{slug}` after CREATE DATABASE
+
+`CREATE` on `*.*` lets `b2b_master` **create** the database but **not use** it until database-level grants exist.
+
+The app now runs **GRANT → FLUSH → verify `USE`** before cloning schema. If that still fails, run on RDS:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX,
+  CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, REFERENCES
+  ON `b2b_tenant_%`.* TO 'b2b_master'@'%';
+FLUSH PRIVILEGES;
+```
+
+`b2b_tenant_appppp` matches `b2b_tenant_%` — without that grant line, provisioning stops with 1044.
+
 ## Provisioning order (per company)
 
 1. Reserve `b2b_tenant_{slug}` on company row  
 2. `CREATE DATABASE` (empty tenant DB)  
-3. `GRANT` specific privileges on that DB to `b2b_master` (if not covered by `b2b_tenant_%` wildcard)  
+3. `GRANT` + verify access for `b2b_master` on that DB (or rely on `b2b_tenant_%`.* wildcard)  
 4. Clone schema from template (PDO, no mysqldump FLUSH)  
 5. Seed reference tables  
 6. `CREATE USER` + `GRANT` for dedicated CRM user (specific privileges, not ALL)  

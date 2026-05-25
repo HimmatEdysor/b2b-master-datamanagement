@@ -654,16 +654,7 @@ class TenantProvisionerService
 
         $pdo = TenantDbAdmin::adminPdo();
         TenantDbAdmin::createTenantDatabase($pdo, $to);
-
-        try {
-            TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $to);
-        } catch (\PDOException $e) {
-            throw new \RuntimeException(
-                "Created [{$to}] but GRANT for `".TenantDbAdmin::username().'` failed: '.$e->getMessage(),
-                0,
-                $e
-            );
-        }
+        TenantDbAdmin::grantAndVerifyAdminAccessToTenantDatabase($pdo, $to);
 
         $this->activityLog->database(
             'create_tenant_database',

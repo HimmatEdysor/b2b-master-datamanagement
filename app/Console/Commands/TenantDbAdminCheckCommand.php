@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\TenantDbAdminCapabilityService;
+use App\Support\TenantDbAdmin;
 use Illuminate\Console\Command;
 
 class TenantDbAdminCheckCommand extends Command
@@ -16,6 +17,8 @@ class TenantDbAdminCheckCommand extends Command
         $audit = $capabilities->audit();
 
         $this->info($audit['summary']);
+        $this->line('Build: '.TenantDbAdminCapabilityService::CHECK_BUILD);
+        $this->line('Provision test DB: '.TenantDbAdmin::provisionCheckDatabaseName());
         $this->newLine();
 
         foreach ($audit['checks'] as $check) {

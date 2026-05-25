@@ -38,4 +38,10 @@ class TenantDbAdminCapabilityServiceTest extends TestCase
         $this->assertSame('b2b_tenant_provisioncheck', TenantDbAdmin::provisionCheckDatabaseName());
         $this->assertSame('b2b_tenant_%', TenantDbAdmin::tenantDatabaseGrantPattern());
     }
+
+    #[Test]
+    public function check_build_constant_is_set(): void
+    {
+        $this->assertStringContainsString('b2b-tenant', TenantDbAdminCapabilityService::CHECK_BUILD);
+    }
 }

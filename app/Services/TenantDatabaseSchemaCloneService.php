@@ -31,12 +31,7 @@ class TenantDatabaseSchemaCloneService
         }
 
         TenantDbAdmin::createTenantDatabase($pdo, $toDatabase);
-
-        $adminGranted = false;
-        if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
-            TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $toDatabase);
-            $adminGranted = true;
-        }
+        $adminGranted = TenantDbAdmin::grantAndVerifyAdminAccessToTenantDatabase($pdo, $toDatabase);
 
         $clone = $this->cloneSchemaInto($fromDatabase, $toDatabase, $pdo);
 

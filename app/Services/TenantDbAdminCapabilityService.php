@@ -11,6 +11,8 @@ use PDOException;
  */
 class TenantDbAdminCapabilityService
 {
+    /** Bump when provision-check / grant parsing changes (grep on server to confirm deploy). */
+    public const CHECK_BUILD = '2026-05-26-grant-then-use';
     /**
      * @return array{
      *     ok: bool,
@@ -149,23 +151,61 @@ class TenantDbAdminCapabilityService
     {
         $required = ['CREATE', 'DROP', 'CREATE USER'];
 
-        $grantText = $this->showGrantsText($pdo);
-        $global = strtoupper($grantText);
-
         $checks = [];
         foreach ($required as $priv) {
-            $has = str_contains($global, $priv)
-                || (str_contains($global, 'ALL PRIVILEGES') && str_contains($global, 'ON *.*'));
+            $has = $this->hasGlobalPrivilege($pdo, $priv);
             $checks[] = [
                 'name' => 'privilege_'.strtolower(str_replace(' ', '_', $priv)),
                 'ok' => $has,
                 'detail' => $has
-                    ? "Has {$priv} (from SHOW GRANTS)."
-                    : "Missing {$priv} on *.* — required to create/drop databases and tenant users.",
+                    ? "Has {$priv} on *.* (from SHOW GRANTS)."
+                    : "Missing {$priv} on *.* — not enough to have it only on `".TenantDbAdmin::tenantDatabaseGrantPattern().'`. '
+                    .'RDS master must run: GRANT CREATE, DROP, CREATE USER ON *.* TO `'.TenantDbAdmin::username()."`@'%';",
             ];
         }
 
         return $checks;
+    }
+
+    protected function hasGlobalPrivilege(PDO $pdo, string $privilege): bool
+    {
+        foreach ($this->globalGrantLines($pdo) as $line) {
+            if ($this->globalGrantLineHasPrivilege($line, $privilege)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function globalGrantLines(PDO $pdo): array
+    {
+        return array_values(array_filter(
+            preg_split('/\r\n|\r|\n/', $this->showGrantsText($pdo)) ?: [],
+            fn (string $line) => stripos($line, 'ON *.*') !== false
+        ));
+    }
+
+    protected function globalGrantLineHasPrivilege(string $line, string $privilege): bool
+    {
+        $upper = strtoupper($line);
+
+        if (str_contains($upper, 'ALL PRIVILEGES')) {
+            return true;
+        }
+
+        return match ($privilege) {
+            'CREATE' => (bool) preg_match(
+                '/\bCREATE\b(?!\s+TEMPORARY)(?!\s+VIEW)(?!\s+USER)/',
+                $upper
+            ),
+            'DROP' => (bool) preg_match('/\bDROP\b/', $upper),
+            'CREATE USER' => str_contains($upper, 'CREATE USER'),
+            default => str_contains($upper, strtoupper($privilege)),
+        };
     }
 
     protected function showGrantsText(PDO $pdo): string
@@ -274,26 +314,11 @@ class TenantDbAdminCapabilityService
      */
     protected function tryGrantAdminOnProvisionCheckDatabase(PDO $pdo, string $testDb): string
     {
-        try {
-            TenantDbAdmin::grantAdminOnTenantDatabase($pdo, $testDb);
+        $granted = TenantDbAdmin::grantAndVerifyAdminAccessToTenantDatabase($pdo, $testDb);
 
-            return 'Per-database GRANT succeeded.';
-        } catch (PDOException $e) {
-            if ($this->hasTenantDatabaseWildcardGrant($pdo)) {
-                return 'Per-database GRANT skipped (already has `'.TenantDbAdmin::tenantDatabaseGrantPattern().'` from RDS).';
-            }
-
-            throw $e;
-        }
-    }
-
-    protected function hasTenantDatabaseWildcardGrant(PDO $pdo): bool
-    {
-        $pattern = TenantDbAdmin::tenantDatabaseGrantPattern();
-        $grantText = $this->showGrantsText($pdo);
-
-        return str_contains($grantText, 'ON `'.$pattern.'`')
-            || str_contains($grantText, "ON `{$pattern}`");
+        return $granted
+            ? 'Per-database GRANT succeeded and USE verified.'
+            : 'Access verified via pre-granted `'.TenantDbAdmin::tenantDatabaseGrantPattern().'` (per-DB GRANT skipped or not allowed on RDS).';
     }
 
     protected function dropProvisionCheckDatabaseIfExists(PDO $pdo, string $databaseName): void
