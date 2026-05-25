@@ -203,6 +203,20 @@ return [
             'type' => 'password',
             'hint' => 'Must match MySQL for the admin user above. Overrides .env when saved. Leave blank when saving other fields to keep the current password.',
         ],
+        'tenant_db_shared_credentials' => [
+            'section' => 'database',
+            'label' => 'Use shared MySQL user for all tenants (RDS)',
+            'config' => 'tenant_db_shared_credentials',
+            'type' => 'boolean',
+            'hint' => 'Every company uses the admin user above for its own database_name (requires b2b_tenant_% grant on RDS). No per-tenant CREATE USER.',
+        ],
+        'tenant_db_grant_admin_on_create' => [
+            'section' => 'database',
+            'label' => 'GRANT admin on each new tenant DB',
+            'config' => 'tenant_db_grant_admin_on_create',
+            'type' => 'boolean',
+            'hint' => 'Disable when b2b_tenant_%.* is already granted on RDS (recommended).',
+        ],
         'tenant_db_user_hosts' => [
             'section' => 'database',
             'label' => 'Tenant DB user hosts',

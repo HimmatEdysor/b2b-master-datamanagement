@@ -91,10 +91,15 @@ class TenantDbAdminCapabilityService
         $user = TenantDbAdmin::username();
         $template = $config['template'];
 
+        $shared = TenantDbAdmin::usesSharedTenantCredentials();
+        $readySummary = $shared
+            ? "Ready: `{$user}` can provision tenant DBs (shared credentials mode; template `{$template}`)."
+            : "Ready: `{$user}` can provision tenant databases from template `{$template}`.";
+
         return [
             'ok' => $ok,
             'summary' => $ok
-                ? "Ready: `{$user}` can provision tenant databases from template `{$template}`."
+                ? $readySummary
                 : 'Not ready: fix failed checks below, then run `php artisan tenant:db-admin-check` again.',
             'checks' => $checks,
             'setup_sql' => $this->rdsSetupSql($user, $template),
@@ -357,6 +362,8 @@ class TenantDbAdminCapabilityService
         $templatePriv = TenantDbAdmin::privilegesSql(TenantDbAdmin::templateReadPrivileges());
         $dbPriv = TenantDbAdmin::privilegesSql(TenantDbAdmin::databaseProvisionerPrivileges());
 
+        $sharedEnv = 'TENANT_DB_SHARED_CREDENTIALS=true';
+
         return <<<SQL
 -- Run on RDS as the instance MASTER user (mysql client / Workbench).
 -- AWS RDS does NOT allow: GRANT ALL PRIVILEGES ON *.*  or  WITH GRANT OPTION
@@ -370,9 +377,13 @@ GRANT {$dbPriv} ON `{$prefix}%`.* TO '{$user}'@'%';
 
 FLUSH PRIVILEGES;
 
+-- App server .env (RDS — no per-tenant MySQL users):
+-- TENANT_DB_GRANT_ADMIN_ON_CREATE=false
+-- {$sharedEnv}
+-- TENANT_TEMPLATE_DATABASE={$tpl}
+
 -- Verify from app server:
--- mysql -h YOUR_RDS_HOST -u {$username} -p -e "SHOW GRANTS FOR CURRENT_USER()"
--- php artisan tenant:db-admin-check
+-- php artisan config:clear && php artisan tenant:db-admin-check
 SQL;
     }
 }

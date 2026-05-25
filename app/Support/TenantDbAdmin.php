@@ -270,7 +270,38 @@ class TenantDbAdmin
 
     public static function shouldGrantAdminOnCreate(): bool
     {
-        return (bool) config('master.tenant_db_grant_admin_on_create', true);
+        return (bool) config('master.tenant_db_grant_admin_on_create', false);
+    }
+
+    /**
+     * RDS: b2b_master + b2b_tenant_% wildcard — no per-tenant MySQL users (no GRANT OPTION).
+     */
+    public static function usesSharedTenantCredentials(): bool
+    {
+        return (bool) config('master.tenant_db_shared_credentials', false);
+    }
+
+    /**
+     * CRM / resolve API: b2b_master + company database_name (wildcard b2b_tenant_% on RDS).
+     *
+     * @return array{host: string, port: int, database: string, username: string, password: string}
+     */
+    public static function tenantConnectionConfig(\App\Models\Tenant $tenant): array
+    {
+        $database = (string) $tenant->database_name;
+        if ($database === '') {
+            throw new \RuntimeException("Company [{$tenant->slug}] has no database_name.");
+        }
+
+        self::assertCanProvision();
+
+        return [
+            'host' => (string) ($tenant->database_host ?: self::host()),
+            'port' => (int) ($tenant->database_port ?: self::port()),
+            'database' => $database,
+            'username' => self::username(),
+            'password' => self::password(),
+        ];
     }
 
     public static function tenantDatabasePrefix(): string

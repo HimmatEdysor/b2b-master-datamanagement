@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\TenantDatabaseUserService;
+use App\Support\TenantDbAdmin;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -42,6 +43,16 @@ class TenantDatabaseUserServiceTest extends TestCase
         $this->assertStringContainsString("CREATE USER 'b2b_tenant_x'@'localhost'", $sql);
         $this->assertStringEndsWith(';', $sql);
         $this->assertMatchesRegularExpression('/CREATE USER[^;]+;\s*\nGRANT/', $sql);
+    }
+
+    #[Test]
+    public function shared_credentials_mode_is_configurable(): void
+    {
+        config(['master.tenant_db_shared_credentials' => true]);
+        $this->assertTrue(TenantDbAdmin::usesSharedTenantCredentials());
+
+        config(['master.tenant_db_shared_credentials' => false]);
+        $this->assertFalse(TenantDbAdmin::usesSharedTenantCredentials());
     }
 
     #[Test]

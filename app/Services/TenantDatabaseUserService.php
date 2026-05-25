@@ -28,6 +28,10 @@ class TenantDatabaseUserService
             throw new \InvalidArgumentException('Tenant has no database name.');
         }
 
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            return $this->assignSharedAdminCredentials($tenant, $databaseName);
+        }
+
         $username = $this->deriveUsername($databaseName);
         $password = Str::password(24, letters: true, numbers: true, symbols: false);
 
@@ -54,6 +58,41 @@ class TenantDatabaseUserService
     }
 
     /**
+     * @return array{username: string, password: string}
+     */
+    protected function assignSharedAdminCredentials(Tenant $tenant, string $databaseName): array
+    {
+        $username = TenantDbAdmin::username();
+        $password = TenantDbAdmin::password();
+
+        if ($username === '' || $password === '') {
+            throw new \RuntimeException(
+                'TENANT_DB_SHARED_CREDENTIALS is enabled but TENANT_DB_USERNAME or TENANT_DB_PASSWORD is empty.'
+            );
+        }
+
+        $tenant->update([
+            'database_username' => $username,
+            'database_password' => $password,
+        ]);
+
+        $this->activityLog->database(
+            'provision_db_user',
+            'ok',
+            "Using shared MySQL user `{$username}` for database {$databaseName} (RDS wildcard `"
+                .TenantDbAdmin::tenantDatabaseGrantPattern().'`, no per-tenant GRANT)',
+            $tenant,
+            null,
+            ['username' => $username, 'database' => $databaseName, 'shared' => true]
+        );
+
+        return [
+            'username' => $username,
+            'password' => $password,
+        ];
+    }
+
+    /**
      * Change password for an existing dedicated MySQL user (ALTER USER) and store on tenant.
      *
      * @return array{username: string, password: string}
@@ -68,7 +107,12 @@ class TenantDatabaseUserService
 
         $username = $tenant->database_username ?: $this->deriveUsername($databaseName);
 
-        $this->runAdminSql($this->buildPasswordUpdateSql($username, $password));
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            $username = TenantDbAdmin::username();
+            $password = TenantDbAdmin::password() !== '' ? TenantDbAdmin::password() : $password;
+        } else {
+            $this->runAdminSql($this->buildPasswordUpdateSql($username, $password));
+        }
 
         $tenant->update([
             'database_username' => $username,

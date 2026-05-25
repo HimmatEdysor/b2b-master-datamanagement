@@ -136,9 +136,18 @@ class Tenant extends Model
 
     public function isDatabaseProvisioned(): bool
     {
-        return $this->database_name !== null
-            && $this->database_name !== ''
-            && $this->database_host !== null
+        if ($this->database_name === null || $this->database_name === '') {
+            return false;
+        }
+
+        if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
+            return $this->database_host !== null
+                && $this->database_host !== ''
+                && \App\Support\TenantDbAdmin::username() !== ''
+                && \App\Support\TenantDbAdmin::password() !== '';
+        }
+
+        return $this->database_host !== null
             && $this->database_host !== ''
             && $this->hasDatabaseUsername()
             && $this->hasDatabasePassword();
@@ -155,6 +164,17 @@ class Tenant extends Model
      */
     public function connectionConfig(): array
     {
+        if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
+            if (! $this->isDatabaseProvisioned()) {
+                throw new \RuntimeException(
+                    "Company [{$this->slug}] database is not ready. Approve provisioning (uses shared MySQL user "
+                    .\App\Support\TenantDbAdmin::username().').'
+                );
+            }
+
+            return \App\Support\TenantDbAdmin::tenantConnectionConfig($this);
+        }
+
         if (! $this->isDatabaseProvisioned()) {
             throw new \RuntimeException(
                 "Company [{$this->slug}] has no complete database connection stored. Approve provisioning or set host, username, and password on the company record."

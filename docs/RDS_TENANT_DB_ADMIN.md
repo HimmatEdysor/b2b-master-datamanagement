@@ -27,8 +27,11 @@ TENANT_DB_USERNAME=b2b_master
 TENANT_DB_PASSWORD=YOUR_STRONG_PASSWORD
 TENANT_TEMPLATE_DATABASE=b2b_live_database
 TENANT_DB_CLONE_METHOD=pdo
-TENANT_DB_GRANT_ADMIN_ON_CREATE=true
+TENANT_DB_GRANT_ADMIN_ON_CREATE=false
+TENANT_DB_SHARED_CREDENTIALS=true
 ```
+
+With `TENANT_DB_SHARED_CREDENTIALS=true`, provisioning does **not** run `CREATE USER` / per-tenant `GRANT` (RDS blocks `GRANT OPTION`). Each company row stores the same `b2b_master` credentials; CRM connects using that user and the company `database_name`.
 
 Verify:
 

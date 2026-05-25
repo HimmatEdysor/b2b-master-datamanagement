@@ -453,7 +453,9 @@ class TenantProvisionerService
             'provision',
             'ok',
             'Schema clone + reference seed (tenant_seed_tables)'
-                .', dedicated MySQL user ('.$dbCredentials['username'].'), S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
+                .', MySQL user ('.$dbCredentials['username']
+                .(TenantDbAdmin::usesSharedTenantCredentials() ? ', shared RDS admin' : ', dedicated')
+                .'), S3 folder ('.($s3Folder ?? $tenant->slug).'), domains, and default CRM admin ready',
             $by
         );
 

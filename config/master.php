@@ -61,7 +61,16 @@ return [
     | After CREATE DATABASE, GRANT specific privileges on that DB to TENANT_DB_USERNAME (RDS-safe, not ALL).
     */
     'tenant_db_grant_admin_on_create' => filter_var(
-        env('TENANT_DB_GRANT_ADMIN_ON_CREATE', true),
+        env('TENANT_DB_GRANT_ADMIN_ON_CREATE', false),
+        FILTER_VALIDATE_BOOL
+    ),
+
+    /*
+    | AWS RDS without GRANT OPTION: one MySQL user (TENANT_DB_USERNAME) for every tenant DB
+    | via `b2b_tenant_%`.* wildcard. Skips CREATE USER / per-tenant GRANT during provisioning.
+    */
+    'tenant_db_shared_credentials' => filter_var(
+        env('TENANT_DB_SHARED_CREDENTIALS', false),
         FILTER_VALIDATE_BOOL
     ),
 

@@ -3,8 +3,11 @@
     use App\Services\TenantProvisionerService;
     use App\Support\TenantDbAdmin;
 
+    $sharedDbUser = TenantDbAdmin::usesSharedTenantCredentials();
     $expectedUsername = $tenant->database_name
-        ? app(TenantDatabaseUserService::class)->deriveUsername($tenant->database_name)
+        ? ($sharedDbUser
+            ? TenantDbAdmin::username()
+            : app(TenantDatabaseUserService::class)->deriveUsername($tenant->database_name))
         : null;
     $hasStoredCreds = $tenant->isDatabaseProvisioned();
     $hasPartialCreds = $tenant->hasPartialDatabaseCredentials();
@@ -22,6 +25,13 @@
 @endphp
 
 <div id="tenant-database-credentials">
+@if($sharedDbUser)
+    <p class="form-hint db-credentials-status" style="margin-bottom:12px">
+        <strong>RDS shared MySQL user:</strong> every tenant uses <code>{{ TenantDbAdmin::username() }}</code>
+        with access via <code>{{ TenantDbAdmin::tenantDatabaseGrantPattern() }}</code>.
+        Change password in <a href="{{ route('admin.settings.edit') }}">Web settings</a> (not per-company <code>CREATE USER</code>).
+    </p>
+@endif
 @if($hasStoredCreds)
     <p class="db-credentials-status db-credentials-status-ok">
         <strong>Database credentials are saved.</strong>
@@ -146,7 +156,13 @@
                            placeholder="Min. 8 characters">
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm">Update MySQL password</button>
-                <p class="form-hint">Runs <code>ALTER USER</code> on the server and saves the password on this company record.</p>
+                <p class="form-hint">
+                    @if($sharedDbUser)
+                        Updates the stored copy for CRM resolve; MySQL password is shared — change it in Web settings.
+                    @else
+                        Runs <code>ALTER USER</code> on the server and saves the password on this company record.
+                    @endif
+                </p>
             </form>
         @endif
 
