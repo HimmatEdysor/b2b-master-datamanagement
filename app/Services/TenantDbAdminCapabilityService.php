@@ -133,9 +133,6 @@ class TenantDbAdminCapabilityService
     protected function checkGrants(PDO $pdo): array
     {
         $required = ['CREATE', 'DROP', 'CREATE USER'];
-        if (TenantDbAdmin::shouldGrantAdminOnCreate()) {
-            $required[] = 'GRANT OPTION';
-        }
 
         $grantText = $this->showGrantsText($pdo);
         $global = strtoupper($grantText);
@@ -143,7 +140,6 @@ class TenantDbAdminCapabilityService
         $checks = [];
         foreach ($required as $priv) {
             $has = str_contains($global, $priv)
-                || ($priv === 'GRANT OPTION' && str_contains($global, 'WITH GRANT OPTION'))
                 || (str_contains($global, 'ALL PRIVILEGES') && str_contains($global, 'ON *.*'));
             $checks[] = [
                 'name' => 'privilege_'.strtolower(str_replace(' ', '_', $priv)),
@@ -250,7 +246,7 @@ class TenantDbAdminCapabilityService
                 'name' => 'create_drop_database',
                 'ok' => false,
                 'detail' => 'CREATE/GRANT/DROP DATABASE test failed: '.$e->getMessage()
-                    .' User needs CREATE + GRANT OPTION, or RDS master must pre-grant b2b_tenant_%.*',
+                    .' RDS master must grant CREATE,DROP,CREATE USER on *.* and database privileges on b2b_tenant_% (see tenant:db-admin-check).',
             ];
         }
     }
@@ -283,7 +279,7 @@ class TenantDbAdminCapabilityService
                 'name' => 'grant_admin_on_tenant_db',
                 'ok' => false,
                 'detail' => 'GRANT on new tenant DB failed: '.$e->getMessage()
-                    .' RDS master must grant CREATE + GRANT OPTION, or pre-grant ALL on `b2b_tenant_%`.*',
+                    .' Pre-grant `b2b_tenant_%`.* with specific privileges, or set TENANT_DB_GRANT_ADMIN_ON_CREATE=false.',
             ];
         }
     }
@@ -293,24 +289,26 @@ class TenantDbAdminCapabilityService
         $user = str_replace("'", "''", $username);
         $tpl = str_replace('`', '``', $template);
         $prefix = str_replace('`', '``', (string) config('master.tenant_database_prefix', 'b2b_tenant_'));
+        $global = TenantDbAdmin::privilegesSql(TenantDbAdmin::globalProvisionerPrivileges());
+        $templatePriv = TenantDbAdmin::privilegesSql(TenantDbAdmin::templateReadPrivileges());
+        $dbPriv = TenantDbAdmin::privilegesSql(TenantDbAdmin::databaseProvisionerPrivileges());
 
         return <<<SQL
 -- Run on RDS as the instance MASTER user (mysql client / Workbench).
--- Replace YOUR_STRONG_PASSWORD, then set the same values in .env:
---   TENANT_DB_USERNAME={$username}
---   TENANT_DB_PASSWORD=YOUR_STRONG_PASSWORD
--- User must connect from the app server (e.g. EC2 172.31.x.x) — use '%' host.
+-- AWS RDS does NOT allow: GRANT ALL PRIVILEGES ON *.*  or  WITH GRANT OPTION
+-- Replace YOUR_STRONG_PASSWORD, then set .env TENANT_DB_USERNAME / TENANT_DB_PASSWORD
 
 CREATE USER IF NOT EXISTS '{$user}'@'%' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
 
-GRANT CREATE, DROP, ALTER, INDEX, CREATE USER, GRANT OPTION, PROCESS ON *.* TO '{$user}'@'%';
-GRANT SELECT, SHOW VIEW ON `{$tpl}`.* TO '{$user}'@'%';
-GRANT ALL PRIVILEGES ON `{$prefix}%`.* TO '{$user}'@'%';
+GRANT {$global} ON *.* TO '{$user}'@'%';
+GRANT {$templatePriv} ON `{$tpl}`.* TO '{$user}'@'%';
+GRANT {$dbPriv} ON `{$prefix}%`.* TO '{$user}'@'%';
 
 FLUSH PRIVILEGES;
 
--- Verify (from app server):
+-- Verify from app server:
 -- mysql -h YOUR_RDS_HOST -u {$username} -p -e "SHOW GRANTS FOR CURRENT_USER()"
+-- php artisan tenant:db-admin-check
 SQL;
     }
 }

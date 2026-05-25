@@ -93,6 +93,99 @@ class TenantDbAdmin
     }
 
     /**
+     * Global *.* privileges for TENANT_DB_USERNAME (RDS master setup — not ALL PRIVILEGES).
+     *
+     * @return list<string>
+     */
+    public static function globalProvisionerPrivileges(): array
+    {
+        return self::normalizePrivilegeList(config('master.tenant_db_global_privileges', []));
+    }
+
+    /**
+     * Per-tenant database privileges for provisioning admin + schema clone/seed.
+     *
+     * @return list<string>
+     */
+    public static function databaseProvisionerPrivileges(): array
+    {
+        return self::normalizePrivilegeList(config('master.tenant_db_database_privileges', []));
+    }
+
+    /**
+     * Read-only on template DB.
+     *
+     * @return list<string>
+     */
+    public static function templateReadPrivileges(): array
+    {
+        return self::normalizePrivilegeList(config('master.tenant_db_template_privileges', []));
+    }
+
+    /**
+     * Dedicated CRM MySQL user per company.
+     *
+     * @return list<string>
+     */
+    public static function tenantAppPrivileges(): array
+    {
+        return self::normalizePrivilegeList(config('master.tenant_db_tenant_user_privileges', []));
+    }
+
+    /**
+     * @param  list<string>  $privileges
+     */
+    public static function privilegesSql(array $privileges): string
+    {
+        return implode(', ', self::normalizePrivilegeList($privileges));
+    }
+
+    /**
+     * @param  list<string>  $privileges
+     */
+    public static function buildGrantOnDatabaseSql(
+        string $databaseName,
+        string $username,
+        string $host,
+        array $privileges
+    ): string {
+        $privSql = self::privilegesSql($privileges);
+        $quotedDb = self::quoteIdentifier($databaseName);
+        $user = str_replace("'", "''", $username);
+        $host = str_replace("'", "''", $host);
+
+        return "GRANT {$privSql} ON {$quotedDb}.* TO '{$user}'@'{$host}'";
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function grantStatementsForAdminOnDatabase(string $databaseName): array
+    {
+        $user = self::username();
+        $privileges = self::databaseProvisionerPrivileges();
+        $statements = [];
+
+        foreach (self::adminGrantHosts() as $host) {
+            $statements[] = self::buildGrantOnDatabaseSql($databaseName, $user, $host, $privileges);
+        }
+
+        return $statements;
+    }
+
+    /**
+     * @param  list<string>  $privileges
+     * @return list<string>
+     */
+    protected static function normalizePrivilegeList(array $privileges): array
+    {
+        return array_values(array_filter(
+            array_map('trim', $privileges),
+            fn (string $p) => $p !== ''
+        ));
+    }
+
+    /**
      * @throws PDOException
      */
     public static function adminPdo(): PDO
@@ -184,14 +277,8 @@ class TenantDbAdmin
             return;
         }
 
-        $user = str_replace("'", "''", self::username());
-        $quotedDb = self::quoteIdentifier($databaseName);
-
-        foreach (self::adminGrantHosts() as $host) {
-            $escapedHost = str_replace("'", "''", $host);
-            $pdo->exec(
-                "GRANT ALL PRIVILEGES ON {$quotedDb}.* TO '{$user}'@'{$escapedHost}'"
-            );
+        foreach (self::grantStatementsForAdminOnDatabase($databaseName) as $sql) {
+            $pdo->exec($sql);
         }
 
         self::flushPrivilegesIfAllowed($pdo);

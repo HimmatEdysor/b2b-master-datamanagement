@@ -742,7 +742,7 @@ class TenantProvisionerService
     }
 
     /**
-     * GRANT ALL on new tenant DB to TENANT_DB_USERNAME (mysqldump path).
+     * RDS-safe GRANT on new tenant DB to TENANT_DB_USERNAME (mysqldump path).
      */
     protected function grantAdminOnTenantDatabaseViaCli(
         Tenant $tenant,
@@ -751,14 +751,10 @@ class TenantProvisionerService
         float $timeout
     ): void {
         $user = TenantDbAdmin::username();
-        $quotedDb = TenantDbAdmin::quoteIdentifier($databaseName);
-        $grants = [];
-        foreach (TenantDbAdmin::adminGrantHosts() as $host) {
-            $escapedUser = str_replace("'", "''", $user);
-            $escapedHost = str_replace("'", "''", $host);
-            $grants[] = "GRANT ALL PRIVILEGES ON {$quotedDb}.* TO '{$escapedUser}'@'{$escapedHost}'";
-        }
-        $grants[] = 'FLUSH PRIVILEGES';
+        $grants = [
+            ...TenantDbAdmin::grantStatementsForAdminOnDatabase($databaseName),
+            'FLUSH PRIVILEGES',
+        ];
 
         $result = Process::timeout($timeout)
             ->env($mysqlEnv)
@@ -771,7 +767,7 @@ class TenantProvisionerService
             $this->activityLog->database('grant_admin_on_tenant_db', 'failed', $msg, $tenant, null, ['database' => $databaseName]);
             throw new \RuntimeException(
                 'Could not grant '.TenantDbAdmin::username()." on `{$databaseName}`: {$msg}. "
-                .'RDS master may need to run: GRANT ALL ON `'.$databaseName.'`.* TO \''.$user."'@'%';"
+                .'Run `php artisan tenant:db-admin-check` for RDS setup SQL (specific privileges, not ALL).'
             );
         }
 

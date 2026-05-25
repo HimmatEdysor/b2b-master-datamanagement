@@ -1,98 +1,85 @@
 # RDS tenant provisioning user (`TENANT_DB_*`)
 
-The master app uses **one MySQL admin account** (`b2b_master` / `TENANT_DB_*`) to provision each company.
+AWS RDS **does not allow** `GRANT ALL PRIVILEGES ON *.*` or `WITH GRANT OPTION`.  
+This app uses **explicit privileges** everywhere (portal + setup SQL).
 
-## Provisioning order (per company)
+## One-time RDS setup (run as RDS master user)
 
-1. **Company created** — `database_name` reserved on the tenant row (e.g. `b2b_tenant_chhota_don`).
-2. **CREATE DATABASE** — empty tenant database on RDS.
-3. **GRANT** — `ALL` on that database to `TENANT_DB_USERNAME` (`b2b_master`@`%`) so the admin user can create tables.
-4. **Clone schema** — copy table structure from the template DB (`b2b_live_database` / B2C CRM template); no full data dump.
-5. **Seed** — copy configured reference tables from template.
-6. **CREATE USER** — dedicated MySQL user for that tenant’s CRM only.
-7. **CRM admin** — default login in tenant DB.
-
-You need access to:
-
-| Database | Why |
-|----------|-----|
-| Template (e.g. `b2b_live_database`) | `SELECT` + `SHOW CREATE TABLE` to clone schema |
-| New `b2b_tenant_*` | `CREATE` tables after DB is created |
-| Master app DB | Laravel `.env` `DB_*` only (separate from `TENANT_DB_*`) |
-
-`b2b_master` does **not** need access to the master Laravel database for provisioning.
-
-Configure in **`.env`** or **Admin → Settings → Tenant database**:
-
-```env
-TENANT_DB_HOST=your-instance.xxxxx.ap-south-1.rds.amazonaws.com
-TENANT_DB_PORT=3306
-TENANT_DB_USERNAME=b2b_master
-TENANT_DB_PASSWORD=your-strong-password
-TENANT_TEMPLATE_DATABASE=b2b_live_database
-```
-
-## Error: `1045 Access denied for user 'b2b_master'@'172.31.x.x'`
-
-This means the app server (EC2) cannot log in. Fix **one** of:
-
-| Cause | Fix |
-|--------|-----|
-| Wrong password in `.env` / Settings | Match the password set in MySQL exactly |
-| User does not exist | Create user (SQL below) |
-| User only allowed from `localhost` | Recreate as `'b2b_master'@'%'` |
-| RDS security group | Allow port **3306** from the EC2 security group |
-
-Test from the **same server** as Laravel:
-
-```bash
-mysql -h YOUR_RDS_HOST -u b2b_master -p -e "SELECT 1"
-```
-
-## Create provisioning user on RDS
-
-Connect as the **RDS master username** (from AWS RDS console → Configuration → Master username), then run:
+Replace passwords and database names, then run in MySQL:
 
 ```sql
 CREATE USER IF NOT EXISTS 'b2b_master'@'%' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
 
 GRANT CREATE, DROP, ALTER, INDEX, CREATE USER, PROCESS ON *.* TO 'b2b_master'@'%';
 GRANT SELECT, SHOW VIEW ON `b2b_live_database`.* TO 'b2b_master'@'%';
-GRANT ALL PRIVILEGES ON `b2b_tenant_%`.* TO 'b2b_master'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX,
+  CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, TRIGGER, REFERENCES
+  ON `b2b_tenant_%`.* TO 'b2b_master'@'%';
 
 FLUSH PRIVILEGES;
 ```
 
-Replace:
+`.env` on the app server:
 
-- `YOUR_STRONG_PASSWORD` — same as `TENANT_DB_PASSWORD`
-- `b2b_live_database` — your `TENANT_TEMPLATE_DATABASE`
-- `b2b_tenant_%` — matches `TENANT_DATABASE_PREFIX` (default `b2b_tenant_`)
+```env
+TENANT_DB_HOST=your-instance.region.rds.amazonaws.com
+TENANT_DB_USERNAME=b2b_master
+TENANT_DB_PASSWORD=YOUR_STRONG_PASSWORD
+TENANT_TEMPLATE_DATABASE=b2b_live_database
+TENANT_DB_CLONE_METHOD=pdo
+TENANT_DB_GRANT_ADMIN_ON_CREATE=true
+```
 
-## Verify from the app server
+Verify:
 
 ```bash
-cd /var/www/html/b2b-master-datamanagement
 php artisan config:clear
 php artisan tenant:db-admin-check
 ```
 
-All checks must pass before **Retry provisioning**.
+## Provisioning order (per company)
 
-Then restart queue workers:
+1. Reserve `b2b_tenant_{slug}` on company row  
+2. `CREATE DATABASE` (empty tenant DB)  
+3. `GRANT` specific privileges on that DB to `b2b_master` (if not covered by `b2b_tenant_%` wildcard)  
+4. Clone schema from template (PDO, no mysqldump FLUSH)  
+5. Seed reference tables  
+6. `CREATE USER` + `GRANT` for dedicated CRM user (specific privileges, not ALL)  
+7. Default CRM admin login  
 
-```bash
-php artisan horizon:terminate
+## Privilege lists (config)
+
+Override in `.env` as comma-separated lists if needed:
+
+| Config key | Used for |
+|------------|----------|
+| `TENANT_DB_GLOBAL_PRIVILEGES` | `*.*` for provisioning user |
+| `TENANT_DB_TEMPLATE_PRIVILEGES` | Read template DB |
+| `TENANT_DB_DATABASE_PRIVILEGES` | Each `b2b_tenant_*` DB (admin + clone) |
+| `TENANT_DB_TENANT_USER_PRIVILEGES` | Per-company CRM MySQL user |
+
+Defaults are in `config/master.php`.
+
+## RDS allowed vs blocked
+
+| Command | RDS |
+|---------|-----|
+| `GRANT SELECT, INSERT, … ON db.*` | Yes |
+| `GRANT ALL PRIVILEGES ON db.*` | Often blocked |
+| `GRANT ALL PRIVILEGES ON *.*` | No |
+| `WITH GRANT OPTION` | No |
+| `FLUSH PRIVILEGES` | Yes |
+| `CREATE USER` | Yes (with CREATE USER on *.*) |
+| `FLUSH TABLES` (mysqldump default) | No — app uses PDO clone |
+
+## Error 1045
+
+`Access denied for 'b2b_master'@'172.31.x.x'` — fix password, `'user'@'%'`, and security group before provisioning.
+
+## Skip per-DB GRANT step
+
+If `b2b_master` already has wildcard `b2b_tenant_%` grants from RDS master:
+
+```env
+TENANT_DB_GRANT_ADMIN_ON_CREATE=false
 ```
-
-## What the app checks before provisioning
-
-- `TENANT_DB_USERNAME` / `TENANT_DB_PASSWORD` set
-- TCP connection to RDS
-- `CREATE`, `DROP`, `CREATE USER` on `*.*`
-- Template database exists and `SHOW CREATE TABLE` works
-- Test `CREATE DATABASE` + `DROP DATABASE`
-
-## Per-tenant user (created automatically)
-
-After schema clone, the app creates a **dedicated** MySQL user per company (e.g. `b2b_tenant_chhotadon`) with access only to that tenant’s database. You do not create these manually.

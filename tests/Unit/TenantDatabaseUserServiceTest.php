@@ -36,7 +36,9 @@ class TenantDatabaseUserServiceTest extends TestCase
         $sql = $service->statementsToSqlBatch($statements);
 
         $this->assertStringContainsString("CREATE USER 'b2b_tenant_x'@'%' IDENTIFIED BY 'pa''ss\\\\word'", $sql);
-        $this->assertStringContainsString("GRANT ALL PRIVILEGES ON `b2b_tenant_x`.* TO 'b2b_tenant_x'@'localhost'", $sql);
+        $this->assertStringContainsString('GRANT SELECT, INSERT, UPDATE, DELETE', $sql);
+        $this->assertStringContainsString("ON `b2b_tenant_x`.* TO 'b2b_tenant_x'@'localhost'", $sql);
+        $this->assertStringNotContainsString('GRANT ALL PRIVILEGES', $sql);
         $this->assertStringContainsString("CREATE USER 'b2b_tenant_x'@'localhost'", $sql);
         $this->assertStringEndsWith(';', $sql);
         $this->assertMatchesRegularExpression('/CREATE USER[^;]+;\s*\nGRANT/', $sql);

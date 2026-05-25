@@ -58,8 +58,7 @@ return [
     'tenant_db_clone_method' => env('TENANT_DB_CLONE_METHOD', 'pdo'),
 
     /*
-    | After CREATE DATABASE for a new tenant, GRANT ALL on that DB to TENANT_DB_USERNAME (@ hosts below).
-    | Use when b2b_master can CREATE DATABASE but needs per-DB grants (common on RDS).
+    | After CREATE DATABASE, GRANT specific privileges on that DB to TENANT_DB_USERNAME (RDS-safe, not ALL).
     */
     'tenant_db_grant_admin_on_create' => filter_var(
         env('TENANT_DB_GRANT_ADMIN_ON_CREATE', true),
@@ -72,6 +71,29 @@ return [
     'tenant_db_admin_grant_hosts' => array_values(array_filter(array_map(
         'trim',
         explode(',', env('TENANT_DB_ADMIN_GRANT_HOSTS', '%'))
+    ))),
+
+    /*
+    | AWS RDS: use explicit privileges (GRANT ALL PRIVILEGES is blocked). Comma-separated override in .env optional.
+    */
+    'tenant_db_global_privileges' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_GLOBAL_PRIVILEGES', 'CREATE,DROP,ALTER,INDEX,CREATE USER,PROCESS'))
+    ))),
+
+    'tenant_db_database_privileges' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_DATABASE_PRIVILEGES', 'SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,ALTER,INDEX,CREATE TEMPORARY TABLES,LOCK TABLES,EXECUTE,CREATE VIEW,SHOW VIEW,TRIGGER,REFERENCES'))
+    ))),
+
+    'tenant_db_template_privileges' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_TEMPLATE_PRIVILEGES', 'SELECT,SHOW VIEW'))
+    ))),
+
+    'tenant_db_tenant_user_privileges' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('TENANT_DB_TENANT_USER_PRIVILEGES', 'SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,ALTER,INDEX,CREATE TEMPORARY TABLES,LOCK TABLES,EXECUTE,CREATE VIEW,SHOW VIEW,TRIGGER,REFERENCES'))
     ))),
 
     /*

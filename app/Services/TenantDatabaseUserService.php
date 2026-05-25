@@ -121,7 +121,6 @@ class TenantDatabaseUserService
     {
         $escapedUser = $this->escapeSqlString($username);
         $escapedPass = $this->escapeSqlString($password);
-        $quotedDb = $this->quoteIdentifier($databaseName);
         $statements = [];
 
         foreach ($this->userHosts() as $host) {
@@ -129,7 +128,12 @@ class TenantDatabaseUserService
             // Drop + create so re-provision after a failed run resets password (MariaDB/MySQL).
             $statements[] = "DROP USER IF EXISTS '{$escapedUser}'@'{$escapedHost}'";
             $statements[] = "CREATE USER '{$escapedUser}'@'{$escapedHost}' IDENTIFIED BY '{$escapedPass}'";
-            $statements[] = "GRANT ALL PRIVILEGES ON {$quotedDb}.* TO '{$escapedUser}'@'{$escapedHost}'";
+            $statements[] = TenantDbAdmin::buildGrantOnDatabaseSql(
+                $databaseName,
+                $username,
+                $host,
+                TenantDbAdmin::tenantAppPrivileges()
+            );
         }
 
         $statements[] = 'FLUSH PRIVILEGES';
