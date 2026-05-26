@@ -10,6 +10,9 @@ use stdClass;
 
 class TenantDefaultUserService
 {
+    /** @var array<string, list<string>> */
+    protected array $usersColumnCache = [];
+
     /**
      * Create default CRM login after tenant DB is cloned and reference data is seeded.
      *
@@ -104,7 +107,7 @@ class TenantDefaultUserService
             [$email]
         );
 
-        $userData = [
+        $userData = $this->buildUserRowForDatabase($db, [
             'name' => $name,
             'email' => $email,
             'password' => Hash::make($plainPassword),
@@ -114,56 +117,14 @@ class TenantDefaultUserService
             'is_active' => 1,
             'type' => $templateUser->type ?? 'user',
             'email_verified_at' => $now,
+            'active_status' => 0,
+            'avatar' => 'avatar.png',
+            'dark_mode' => '0',
+            'created_at' => $now,
             'updated_at' => $now,
-        ];
+        ]);
 
-        if ($existing) {
-            DB::update(
-                "UPDATE `{$db}`.`users` SET
-                    name = ?, email = ?, password = ?, phone_no = ?,
-                    roles_ids = ?, permission_ids = ?, is_active = ?,
-                    type = ?, email_verified_at = ?, updated_at = ?
-                WHERE id = ?",
-                [
-                    $userData['name'],
-                    $userData['email'],
-                    $userData['password'],
-                    $userData['phone_no'],
-                    $userData['roles_ids'],
-                    $userData['permission_ids'],
-                    $userData['is_active'],
-                    $userData['type'],
-                    $userData['email_verified_at'],
-                    $userData['updated_at'],
-                    $existing->id,
-                ]
-            );
-
-            $userId = (int) $existing->id;
-        } else {
-            DB::insert(
-                "INSERT INTO `{$db}`.`users` (
-                    name, email, password, phone_no, roles_ids, permission_ids,
-                    is_active, type, email_verified_at, active_status, avatar, dark_mode,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'avatar.png', '0', ?, ?)",
-                [
-                    $userData['name'],
-                    $userData['email'],
-                    $userData['password'],
-                    $userData['phone_no'],
-                    $userData['roles_ids'],
-                    $userData['permission_ids'],
-                    $userData['is_active'],
-                    $userData['type'],
-                    $userData['email_verified_at'],
-                    $now,
-                    $now,
-                ]
-            );
-
-            $userId = (int) DB::getPdo()->lastInsertId();
-        }
+        $userId = $this->upsertUserRow($db, $existing, $userData);
 
         $this->syncModelHasRoles($tenant, $userId, $templateUser->role_ids ?? []);
 
@@ -178,21 +139,100 @@ class TenantDefaultUserService
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    protected function buildUserRowForDatabase(string $database, array $values): array
+    {
+        $allowed = $this->usersTableColumns($database);
+        $row = [];
+
+        foreach ($values as $column => $value) {
+            if (in_array($column, $allowed, true)) {
+                $row[$column] = $value;
+            }
+        }
+
+        foreach (['name', 'email', 'password'] as $required) {
+            if (! array_key_exists($required, $row)) {
+                throw new \RuntimeException(
+                    "Tenant database `{$database}` users table is missing required column `{$required}`."
+                );
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    protected function upsertUserRow(string $database, ?object $existing, array $data): int
+    {
+        if ($existing) {
+            $sets = [];
+            $bindings = [];
+
+            foreach ($data as $column => $value) {
+                if ($column === 'created_at') {
+                    continue;
+                }
+                $sets[] = $this->quoteIdentifier($column).' = ?';
+                $bindings[] = $value;
+            }
+
+            $bindings[] = $existing->id;
+            DB::update(
+                'UPDATE '.$this->quoteIdentifier($database).'.'.$this->quoteIdentifier('users')
+                .' SET '.implode(', ', $sets).' WHERE id = ?',
+                $bindings
+            );
+
+            return (int) $existing->id;
+        }
+
+        $columns = array_keys($data);
+        $columnList = implode(', ', array_map(fn (string $c) => $this->quoteIdentifier($c), $columns));
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+
+        DB::insert(
+            'INSERT INTO '.$this->quoteIdentifier($database).'.'.$this->quoteIdentifier('users')
+            ." ({$columnList}) VALUES ({$placeholders})",
+            array_values($data)
+        );
+
+        return (int) DB::getPdo()->lastInsertId();
+    }
+
     protected function fetchTemplateReferenceUser(string $email): stdClass
     {
-        $from = config('master.template_database');
+        $from = (string) config('master.template_database');
+        $selectColumns = array_values(array_intersect(
+            ['id', 'roles_ids', 'permission_ids', 'type'],
+            $this->usersTableColumns($from)
+        ));
+
+        if ($selectColumns === []) {
+            $selectColumns = ['id'];
+        }
+
+        $columnList = implode(', ', array_map(fn (string $c) => $this->quoteIdentifier($c), $selectColumns));
 
         $user = DB::selectOne(
-            "SELECT id, roles_ids, permission_ids, type FROM `{$from}`.`users` WHERE email = ? LIMIT 1",
+            "SELECT {$columnList} FROM ".$this->quoteIdentifier($from).'.'.$this->quoteIdentifier('users')
+            .' WHERE email = ? LIMIT 1',
             [$email]
         ) ?? DB::selectOne(
-            "SELECT id, roles_ids, permission_ids, type FROM `{$from}`.`users` ORDER BY id ASC LIMIT 1"
+            "SELECT {$columnList} FROM ".$this->quoteIdentifier($from).'.'.$this->quoteIdentifier('users')
+            .' ORDER BY id ASC LIMIT 1'
         );
 
         $roleIds = [];
-        if ($user) {
+        if ($user && $this->tableExists($from, 'model_has_roles')) {
             $roleIds = DB::select(
-                "SELECT role_id FROM `{$from}`.`model_has_roles` WHERE model_id = ? AND model_type = ?",
+                'SELECT role_id FROM '.$this->quoteIdentifier($from).'.'.$this->quoteIdentifier('model_has_roles')
+                .' WHERE model_id = ? AND model_type = ?',
                 [$user->id, 'App\\Models\\User']
             );
             $roleIds = array_map(fn ($r) => (int) $r->role_id, $roleIds);
@@ -215,7 +255,7 @@ class TenantDefaultUserService
 
         $db = $tenant->database_name;
 
-        if (! $this->tableExists($db, 'model_has_roles')) {
+        if ($db === null || $db === '' || ! $this->tableExists($db, 'model_has_roles')) {
             return;
         }
 
@@ -223,19 +263,44 @@ class TenantDefaultUserService
 
         try {
             DB::delete(
-                "DELETE FROM `{$db}`.`model_has_roles` WHERE model_id = ? AND model_type = ?",
+                'DELETE FROM '.$this->quoteIdentifier($db).'.'.$this->quoteIdentifier('model_has_roles')
+                .' WHERE model_id = ? AND model_type = ?',
                 [$userId, 'App\\Models\\User']
             );
 
             foreach ($roleIds as $roleId) {
                 DB::insert(
-                    "INSERT IGNORE INTO `{$db}`.`model_has_roles` (role_id, model_type, model_id) VALUES (?, ?, ?)",
+                    'INSERT IGNORE INTO '.$this->quoteIdentifier($db).'.'.$this->quoteIdentifier('model_has_roles')
+                    .' (role_id, model_type, model_id) VALUES (?, ?, ?)',
                     [$roleId, 'App\\Models\\User', $userId]
                 );
             }
         } finally {
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function usersTableColumns(string $database): array
+    {
+        if (isset($this->usersColumnCache[$database])) {
+            return $this->usersColumnCache[$database];
+        }
+
+        $rows = DB::select(
+            'SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+            [$database, 'users']
+        );
+
+        $this->usersColumnCache[$database] = array_map(
+            fn ($row) => (string) $row->COLUMN_NAME,
+            $rows
+        );
+
+        return $this->usersColumnCache[$database];
     }
 
     protected function tableExists(string $database, string $table): bool
@@ -246,5 +311,10 @@ class TenantDefaultUserService
         );
 
         return (int) ($row->c ?? 0) > 0;
+    }
+
+    protected function quoteIdentifier(string $identifier): string
+    {
+        return '`'.str_replace('`', '``', $identifier).'`';
     }
 }

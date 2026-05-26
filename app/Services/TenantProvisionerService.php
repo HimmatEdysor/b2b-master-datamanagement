@@ -43,6 +43,60 @@ class TenantProvisionerService
         return $tenant->status === 'active' && ! $tenant->isDatabaseProvisioned();
     }
 
+    /**
+     * Clone + MySQL creds + CRM admin exist (ignores company status / stale provision_error).
+     */
+    public function isProvisionWorkflowComplete(Tenant $tenant): bool
+    {
+        $progress = $this->provisioningProgress($tenant);
+
+        return ($progress['clone_done'] ?? false)
+            && ($progress['mysql_user_done'] ?? false)
+            && ($progress['crm_admin_done'] ?? false)
+            && empty($progress['admin_db_error']);
+    }
+
+    /**
+     * Mark Active when DB work finished but status stuck on failed/provisioning (common on RDS shared user).
+     */
+    public function syncCompletedProvisionState(Tenant $tenant): bool
+    {
+        if ($this->provisionQueue->isActivelyProvisioning($tenant)) {
+            return false;
+        }
+
+        if (! $this->isProvisionWorkflowComplete($tenant)) {
+            return false;
+        }
+
+        $updates = [
+            'status' => 'active',
+            'provision_error' => null,
+            'provisioning_stage' => 'completed',
+            'database_host' => (string) ($tenant->database_host ?: TenantDbAdmin::host()),
+            'database_port' => (int) ($tenant->database_port ?: TenantDbAdmin::port()),
+        ];
+
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            $updates['database_username'] = TenantDbAdmin::username();
+            $updates['database_password'] = TenantDbAdmin::password();
+        }
+
+        $unchanged = $tenant->status === 'active'
+            && $tenant->provision_error === null
+            && $tenant->provisioning_stage === 'completed'
+            && $tenant->isDatabaseProvisioned();
+
+        if ($unchanged) {
+            return false;
+        }
+
+        $tenant->update($updates);
+        $this->resolver->forgetHostCache($tenant);
+
+        return true;
+    }
+
     public function canResumeAfterClone(Tenant $tenant): bool
     {
         $databaseName = $tenant->database_name;
@@ -76,7 +130,9 @@ class TenantProvisionerService
         }
 
         $stage = $tenant->provisioning_stage;
-        $mysqlUserDone = $tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword();
+        $mysqlUserDone = TenantDbAdmin::usesSharedTenantCredentials()
+            ? (TenantDbAdmin::username() !== '' && TenantDbAdmin::password() !== '')
+            : ($tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword());
         $crmAdminDone = $tenant->hasCrmAdminPassword();
         $isQueued = in_array($stage, ['queued', 'running', 'preparing', 'cloning', 'mysql_user', 'seeding', 'crm_admin'], true);
         $isStalled = $this->isProvisioningStalled($tenant);

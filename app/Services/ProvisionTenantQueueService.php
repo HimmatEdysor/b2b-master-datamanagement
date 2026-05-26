@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\ProvisionTenantJob;
 use App\Models\Tenant;
+use App\Services\TenantProvisionerService;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -122,6 +123,10 @@ class ProvisionTenantQueueService
      */
     public function resolveProvisionError(Tenant $tenant): ?string
     {
+        if (app(TenantProvisionerService::class)->isProvisionWorkflowComplete($tenant)) {
+            return null;
+        }
+
         if ($tenant->provision_error !== null && $tenant->provision_error !== '') {
             return $this->normalizeProvisionErrorMessage($tenant->provision_error);
         }
@@ -142,6 +147,10 @@ class ProvisionTenantQueueService
      */
     public function reconcileProvisioningState(Tenant $tenant): bool
     {
+        if (app(TenantProvisionerService::class)->syncCompletedProvisionState($tenant->fresh())) {
+            return true;
+        }
+
         $error = $this->resolveProvisionError($tenant);
 
         if ($error !== null && $error !== '') {

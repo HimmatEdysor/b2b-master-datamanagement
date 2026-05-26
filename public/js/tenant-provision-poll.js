@@ -16,12 +16,19 @@
         if (!data.company_status) return;
 
         if (statusSelect) {
-            statusSelect.value = data.company_status;
             const activeOption = statusSelect.querySelector('option[value="active"]');
             if (activeOption) {
                 activeOption.disabled = !data.can_set_active;
             }
             statusSelect.dataset.canSetActive = data.can_set_active ? '1' : '0';
+            if (data.can_set_active && data.progress
+                && data.progress.clone_done
+                && data.progress.mysql_user_done
+                && data.progress.crm_admin_done) {
+                statusSelect.value = 'active';
+            } else {
+                statusSelect.value = data.company_status;
+            }
         }
 
         if (statusBadge && data.company_status_label) {

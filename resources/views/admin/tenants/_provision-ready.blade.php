@@ -10,7 +10,11 @@
         </li>
         <li class="is-done">
             <span class="tenant-provision-check-icon">✓</span>
-            Dedicated MySQL user &amp; password saved
+            @if(\App\Support\TenantDbAdmin::usesSharedTenantCredentials())
+                Shared MySQL user <code>{{ \App\Support\TenantDbAdmin::username() }}</code> (all tenant DBs)
+            @else
+                Dedicated MySQL user &amp; password saved
+            @endif
         </li>
         <li class="is-done">
             <span class="tenant-provision-check-icon">✓</span>

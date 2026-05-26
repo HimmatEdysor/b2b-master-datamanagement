@@ -181,6 +181,9 @@ class TenantController extends Controller
         if ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
             $tenant->refresh();
         }
+        if ($this->provisioner->syncCompletedProvisionState($tenant->fresh())) {
+            $tenant->refresh();
+        }
 
         $canProvision = $this->provisioner->canApprove($tenant);
         $provisionProgress = $this->provisioner->provisioningProgress($tenant);
@@ -234,17 +237,15 @@ class TenantController extends Controller
 
     public function reconcileProvisioning(Tenant $tenant): RedirectResponse
     {
-        if (! $tenant->isDatabaseProvisioned()) {
+        if (! $this->provisioner->isProvisionWorkflowComplete($tenant)
+            && ! $tenant->isDatabaseProvisioned()) {
             return back()
                 ->with('error', 'Database is not fully provisioned yet. Use Retry provisioning above.')
                 ->withFragment('tenant-manage');
         }
 
-        $tenant->update([
-            'status' => 'active',
-            'provision_error' => null,
-            'provisioning_stage' => 'completed',
-        ]);
+        $this->provisioner->syncCompletedProvisionState($tenant->fresh());
+        $tenant->refresh();
 
         $this->resolver->forgetHostCache($tenant);
         $this->activityLog->domain(
@@ -351,11 +352,18 @@ class TenantController extends Controller
         }
 
         $statusWarning = null;
-        if ($newStatus === 'active' && ! $tenant->isDatabaseProvisioned()) {
+        if ($newStatus === 'active'
+            && ! $tenant->isDatabaseProvisioned()
+            && ! $this->provisioner->isProvisionWorkflowComplete($tenant)) {
             $newStatus = in_array($tenant->status, ['provisioning', 'pending', 'failed'], true)
                 ? $tenant->status
                 : 'provisioning';
             $statusWarning = 'Company status was not changed to Active — finish database provisioning first (MySQL user + CRM login). Use Retry / Approve above, then save again.';
+        }
+
+        if ($newStatus === 'active' && $this->provisioner->isProvisionWorkflowComplete($tenant)) {
+            $this->provisioner->syncCompletedProvisionState($tenant->fresh());
+            $tenant->refresh();
         }
 
         if (in_array($newStatus, ['pending', 'rejected'], true) && $tenant->isDatabaseProvisioned()) {
@@ -456,16 +464,20 @@ class TenantController extends Controller
             $companyStatusLabel = 'Provisioning — '.($progress['stage_label'] ?? '');
         }
 
+        $canSetActive = $tenant->isDatabaseProvisioned()
+            || $this->provisioner->isProvisionWorkflowComplete($tenant);
+
         return response()->json([
             'status' => $tenant->status,
             'company_status' => $companyStatus,
             'company_status_label' => $companyStatusLabel,
-            'can_set_active' => $tenant->isDatabaseProvisioned(),
+            'can_set_active' => $canSetActive,
             'stage' => $progress['stage'],
             'stage_label' => $progress['stage_label'],
             'provision_error' => $errorMessage,
             'progress' => $progress,
-            'done' => $tenant->status === 'active' && $tenant->isDatabaseProvisioned(),
+            'done' => ($tenant->status === 'active' && $tenant->isDatabaseProvisioned())
+                || ($canSetActive && $this->provisioner->isProvisionWorkflowComplete($tenant)),
             'failed' => $companyStatus === 'failed' || (($progress['is_stalled'] ?? false) && $errorMessage),
             'stalled' => $progress['is_stalled'] ?? false,
         ]);

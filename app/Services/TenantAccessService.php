@@ -107,7 +107,9 @@ class TenantAccessService
             }
         }
 
-        if (! $tenant->isDatabaseProvisioned()) {
+        $provisioner = app(\App\Services\TenantProvisionerService::class);
+
+        if (! $tenant->isDatabaseProvisioned() && ! $provisioner->isProvisionWorkflowComplete($tenant)) {
             return $this->deny(
                 'Company database is not provisioned yet.',
                 503,
@@ -115,6 +117,11 @@ class TenantAccessService
                 $companyStatus,
                 $subscriptionStatus,
             );
+        }
+
+        if (in_array($companyStatus, ['failed', 'provisioning'], true)
+            && $provisioner->isProvisionWorkflowComplete($tenant)) {
+            $provisioner->syncCompletedProvisionState($tenant->fresh());
         }
 
         return ['allowed' => true];

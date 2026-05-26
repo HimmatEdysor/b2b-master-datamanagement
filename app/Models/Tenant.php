@@ -141,9 +141,7 @@ class Tenant extends Model
         }
 
         if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
-            return $this->database_host !== null
-                && $this->database_host !== ''
-                && \App\Support\TenantDbAdmin::username() !== ''
+            return \App\Support\TenantDbAdmin::username() !== ''
                 && \App\Support\TenantDbAdmin::password() !== '';
         }
 

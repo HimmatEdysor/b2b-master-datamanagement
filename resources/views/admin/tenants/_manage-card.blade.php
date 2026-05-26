@@ -6,24 +6,28 @@
     $tenantStatusLabels = $tenantStatusLabels ?? config('master.tenant_status_labels', []);
     $planBillingMeta = $planBillingMeta ?? collect();
     $currentPlanNoExpiry = $tenant->subscriptionPlan?->hasNoExpiry() ?? true;
-    $canSetCompanyActive = $tenant->isDatabaseProvisioned();
+    $progress = $provisionProgress ?? [];
+    $provisionComplete = ($progress['clone_done'] ?? false)
+        && ($progress['mysql_user_done'] ?? false)
+        && ($progress['crm_admin_done'] ?? false)
+        && empty($progress['admin_db_error'] ?? null);
+    $canSetCompanyActive = $tenant->isDatabaseProvisioned() || $provisionComplete;
     $statusActiveMismatch = $tenant->status === 'active' && ! $canSetCompanyActive;
     $tenantStatuses = $tenantStatuses ?? config('master.tenant_statuses', []);
     $subscriptionStatusLabels = $subscriptionStatusLabels ?? config('master.subscription_status_labels', []);
     $subscriptionStatuses = $subscriptionStatuses ?? config('master.subscription_statuses', []);
     $plans = $plans ?? collect();
     $canProvision = $canProvision ?? false;
-    $databaseReady = $tenant->isDatabaseProvisioned();
+    $databaseReady = $tenant->isDatabaseProvisioned() || $provisionComplete;
     $statusNeedsFix = $databaseReady && in_array($tenant->status, ['failed', 'provisioning'], true);
     $showProvisionPanel = $canProvision || $statusNeedsFix;
     $crmLoginUrl = TenantUrl::loginUrlForTenant($tenant);
     $crmAdminEmail = $tenant->crmAdminEmail();
     $hasCrmPassword = $tenant->hasCrmAdminPassword();
-    $progress = $provisionProgress ?? [];
     $provisionError = $progress['error_message'] ?? $tenant->provision_error;
     $provisioningQueued = $provisioningQueued ?? ($progress['is_queued'] ?? false);
     $effectiveCompanyStatus = $tenant->status;
-    if ($provisionError) {
+    if ($provisionError && ! $provisionComplete) {
         $effectiveCompanyStatus = 'failed';
     } elseif ($provisioningQueued) {
         $effectiveCompanyStatus = 'provisioning';
@@ -135,7 +139,11 @@
                                 </option>
                             @endforeach
                         </select>
-                        @if($effectiveCompanyStatus === 'failed')
+                        @if($provisionComplete && in_array($tenant->status, ['failed', 'provisioning'], true))
+                            <p class="form-hint" id="tenant-status-reconcile-hint">
+                                Database and CRM login are ready. Choose <strong>Active</strong> and save, or use <strong>Set company to Active</strong> above.
+                            </p>
+                        @elseif($effectiveCompanyStatus === 'failed')
                             <p class="form-hint" id="tenant-status-failed-hint">
                                 Status is <strong>Failed</strong> because provisioning did not complete. Fix provisioning above, then set status when ready.
                             </p>
