@@ -178,10 +178,10 @@ class TenantController extends Controller
             $tenant->refresh();
             session()->flash('warning', 'Queue job was missing — status reset. Click Retry to provision again.');
         }
-        if ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
-            $tenant->refresh();
-        }
+
         if ($this->provisioner->syncCompletedProvisionState($tenant->fresh())) {
+            $tenant->refresh();
+        } elseif ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
             $tenant->refresh();
         }
 
@@ -199,11 +199,9 @@ class TenantController extends Controller
         }
 
         $dnsService = app(\App\Services\TenantDomainDnsService::class);
+        // DNS linking runs on approve / manual "Update DNS" — not on every page view (Cloudflare API is slow).
         $dnsAutoResults = [];
-        if ($tenant->domains->contains(fn ($domain) => $dnsService->isPending($domain, $tenant))) {
-            $dnsAutoResults = $dnsService->autoProvisionPendingForTenant($tenant->fresh(['domains']));
-        }
-        $dnsPendingDomains = $tenant->fresh(['domains'])->domains->filter(
+        $dnsPendingDomains = $tenant->domains->filter(
             fn ($domain) => $dnsService->isPending($domain, $tenant)
         );
         $dnsAutoOk = collect($dnsAutoResults)->where('verified', true);

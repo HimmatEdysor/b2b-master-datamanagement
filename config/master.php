@@ -111,6 +111,9 @@ return [
     */
     'tenant_db_clone_timeout' => (int) env('TENANT_DB_CLONE_TIMEOUT', 3000),
 
+    /** Seconds to wait when opening PDO to TENANT_DB_HOST (admin tenant page checks). */
+    'tenant_db_connect_timeout' => (int) env('TENANT_DB_CONNECT_TIMEOUT', 5),
+
     /*
     | Local dev: allow "Provision now" (sync, ~15–40s for schema-only) without Horizon.
     | Production should use the queue (TENANT_PROVISION_SYNC_LOCAL=false).

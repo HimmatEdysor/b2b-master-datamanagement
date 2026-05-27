@@ -147,8 +147,10 @@ class ProvisionTenantQueueService
      */
     public function reconcileProvisioningState(Tenant $tenant): bool
     {
-        if (app(TenantProvisionerService::class)->syncCompletedProvisionState($tenant->fresh())) {
-            return true;
+        $provisioner = app(TenantProvisionerService::class);
+
+        if ($provisioner->isProvisionWorkflowComplete($tenant)) {
+            return $provisioner->syncCompletedProvisionState($tenant->fresh());
         }
 
         $error = $this->resolveProvisionError($tenant);

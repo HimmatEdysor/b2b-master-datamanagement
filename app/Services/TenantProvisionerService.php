@@ -15,6 +15,11 @@ use Illuminate\Support\Str;
 
 class TenantProvisionerService
 {
+    /** @var array<string, mixed>|null */
+    protected ?array $progressCache = null;
+
+    protected ?int $progressCacheTenantId = null;
+
     public function __construct(
         protected TenantResolverService $resolver,
         protected TenantSeedDataService $seedDataService,
@@ -119,21 +124,27 @@ class TenantProvisionerService
      */
     public function provisioningProgress(Tenant $tenant): array
     {
+        if ($this->progressCacheTenantId === $tenant->id && $this->progressCache !== null) {
+            return $this->progressCache;
+        }
+
         $databaseName = $tenant->database_name;
         $adminDbError = null;
         $cloneDone = false;
 
-        if ($databaseName !== null && $databaseName !== '') {
+        $mysqlUserDone = $this->mysqlCredentialsReady($tenant);
+        $crmAdminDone = $tenant->hasCrmAdminPassword();
+
+        if ($this->canTrustProvisionCompleteFromRow($tenant, $mysqlUserDone, $crmAdminDone)) {
+            $cloneDone = true;
+            $adminDbError = null;
+        } elseif ($databaseName !== null && $databaseName !== '') {
             $check = $this->evaluateProvisionedSchema($tenant, $databaseName);
             $cloneDone = $check['clone_done'];
             $adminDbError = $check['admin_db_error'];
         }
 
         $stage = $tenant->provisioning_stage;
-        $mysqlUserDone = TenantDbAdmin::usesSharedTenantCredentials()
-            ? (TenantDbAdmin::username() !== '' && TenantDbAdmin::password() !== '')
-            : ($tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword());
-        $crmAdminDone = $tenant->hasCrmAdminPassword();
         $isQueued = in_array($stage, ['queued', 'running', 'preparing', 'cloning', 'mysql_user', 'seeding', 'crm_admin'], true);
         $isStalled = $this->isProvisioningStalled($tenant);
 
@@ -156,7 +167,7 @@ class TenantProvisionerService
                 ? 'Stopped — use Retry below'
                 : $this->provisioningStageLabel($stage));
 
-        return [
+        $result = [
             'clone_done' => $cloneDone,
             'mysql_user_done' => $mysqlUserDone,
             'crm_admin_done' => $crmAdminDone,
@@ -170,6 +181,47 @@ class TenantProvisionerService
             'error_message' => $errorMessage,
             'admin_db_error' => $adminDbError,
         ];
+
+        $this->progressCache = $result;
+        $this->progressCacheTenantId = $tenant->id;
+
+        return $result;
+    }
+
+    protected function mysqlCredentialsReady(Tenant $tenant): bool
+    {
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            return TenantDbAdmin::username() !== '' && TenantDbAdmin::password() !== '';
+        }
+
+        return $tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword();
+    }
+
+    /**
+     * Skip slow RDS schema checks when provisioning already finished (common on tenant show page).
+     */
+    protected function canTrustProvisionCompleteFromRow(
+        Tenant $tenant,
+        bool $mysqlUserDone,
+        bool $crmAdminDone
+    ): bool {
+        if ($this->provisionQueue->isActivelyProvisioning($tenant)) {
+            return false;
+        }
+
+        if ($tenant->database_name === null || $tenant->database_name === '') {
+            return false;
+        }
+
+        if (! $mysqlUserDone || ! $crmAdminDone) {
+            return false;
+        }
+
+        if (in_array($tenant->provisioning_stage, ['queued', 'running', 'preparing', 'cloning'], true)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -182,7 +234,8 @@ class TenantProvisionerService
         if ($pdo === null) {
             return [
                 'clone_done' => $this->inferCloneDoneFromStage($tenant),
-                'admin_db_error' => $this->adminMysqlUnavailableMessage(),
+                'admin_db_error' => 'Cannot connect to tenant MySQL at `'.TenantDbAdmin::host()
+                    .'`. Check Admin → Web settings or run `php artisan tenant:db-admin-check` on the server.',
             ];
         }
 
@@ -237,18 +290,6 @@ class TenantProvisionerService
         }
 
         return TenantDbAdmin::tryAdminPdo();
-    }
-
-    protected function adminMysqlUnavailableMessage(): string
-    {
-        try {
-            TenantDbAdmin::adminPdo();
-        } catch (\PDOException $e) {
-            return TenantDbAdmin::connectionErrorMessage($e)
-                .' Fix in Admin → Web settings (MySQL host / user / password), then run `php artisan tenant:db-admin-check`.';
-        }
-
-        return 'Tenant MySQL admin connection failed. Run `php artisan tenant:db-admin-check` on the server.';
     }
 
     protected function tenantHasProvisionedSchemaOnPdo(\PDO $pdo, string $databaseName): bool

@@ -189,6 +189,19 @@ class TenantDbAdmin
     /**
      * @throws PDOException
      */
+    /**
+     * @return array<int, mixed>
+     */
+    public static function pdoOptions(): array
+    {
+        $timeout = max(2, (int) config('master.tenant_db_connect_timeout', 5));
+
+        return [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => $timeout,
+        ];
+    }
+
     public static function adminPdo(): PDO
     {
         self::assertCanProvision();
@@ -197,7 +210,7 @@ class TenantDbAdmin
             self::dsn(),
             self::username(),
             self::password(),
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            self::pdoOptions()
         );
     }
 
