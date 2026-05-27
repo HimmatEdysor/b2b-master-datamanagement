@@ -47,3 +47,37 @@ if (! function_exists('master_env')) {
         return $default;
     }
 }
+
+if (! function_exists('mysql_connect_host')) {
+    /**
+     * Resolve MySQL hostname for PDO (optional IPv4-only for EC2 → RDS).
+     */
+    function mysql_connect_host(?string $host): string
+    {
+        $host = trim((string) $host);
+
+        if ($host === '' || filter_var($host, FILTER_VALIDATE_IP)) {
+            return $host !== '' ? $host : '127.0.0.1';
+        }
+
+        $forceIpv4 = env('DB_FORCE_IPV4');
+        if ($forceIpv4 === null || $forceIpv4 === '') {
+            $forceIpv4 = str_contains(strtolower($host), '.rds.amazonaws.com');
+        }
+
+        if (! filter_var($forceIpv4, FILTER_VALIDATE_BOOL)) {
+            return $host;
+        }
+
+        $records = @dns_get_record($host, DNS_A);
+        if (is_array($records)) {
+            foreach ($records as $record) {
+                if (! empty($record['ip'])) {
+                    return (string) $record['ip'];
+                }
+            }
+        }
+
+        return $host;
+    }
+}

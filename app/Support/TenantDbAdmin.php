@@ -19,7 +19,7 @@ class TenantDbAdmin
 
     public static function host(): string
     {
-        return (string) config('master.tenant_db_host', '127.0.0.1');
+        return mysql_connect_host((string) config('master.tenant_db_host', '127.0.0.1'));
     }
 
     public static function port(): int

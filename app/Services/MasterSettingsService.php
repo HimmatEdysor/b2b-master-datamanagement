@@ -13,19 +13,38 @@ class MasterSettingsService
 
     public function applyToConfig(): void
     {
-        if (! Schema::hasTable('master_settings')) {
+        if (! $this->databaseIsAvailable()) {
             return;
         }
 
-        foreach ($this->storedMap() as $key => $raw) {
-            $field = $this->fieldDefinition($key);
-            if ($field === null || $raw === null || $raw === '') {
-                continue;
+        try {
+            if (! Schema::hasTable('master_settings')) {
+                return;
             }
 
-            $value = $this->castStored($raw, $field['type']);
-            $configKey = 'master.'.$field['config'];
-            config([$configKey => $value]);
+            foreach ($this->storedMap() as $key => $raw) {
+                $field = $this->fieldDefinition($key);
+                if ($field === null || $raw === null || $raw === '') {
+                    continue;
+                }
+
+                $value = $this->castStored($raw, $field['type']);
+                $configKey = 'master.'.$field['config'];
+                config([$configKey => $value]);
+            }
+        } catch (\Throwable) {
+            return;
+        }
+    }
+
+    public function databaseIsAvailable(): bool
+    {
+        try {
+            Schema::getConnection()->getPdo();
+
+            return true;
+        } catch (\Throwable) {
+            return false;
         }
     }
 
