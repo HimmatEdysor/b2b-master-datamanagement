@@ -287,7 +287,7 @@
     @if($isCreate)
     <div class="form-group checkbox-row">
         <label>
-            <input type="checkbox" name="approve_immediately" value="1" @checked(old('approve_immediately'))>
+            <input type="checkbox" name="approve_immediately" value="1" @checked(old('approve_immediately', true))>
             Approve immediately and provision database
         </label>
         <p class="form-hint">Runs clone + domain setup now. Leave unchecked to review later.</p>

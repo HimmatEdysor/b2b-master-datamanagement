@@ -1110,6 +1110,55 @@ table.data-table-plans .col-actions { width: 140px; text-align: right; white-spa
 .tenant-provision-checklist li:not(.is-done) .tenant-provision-check-icon { color: var(--muted); }
 .tenant-provision-poll { margin-bottom: 12px; }
 .tenant-provision-worker-hint code { font-size: 12px; }
+.tenant-provision-percent {
+    margin-left: 8px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-weight: 600;
+}
+.tenant-provision-progress {
+    height: 8px;
+    margin: 10px 0 6px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.tenant-provision-progress-bar {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #1e3a5f, #2563eb);
+    border-radius: 999px;
+    transition: width 0.35s ease;
+}
+.tenant-provision-stage-detail { margin: 4px 0 0; font-family: ui-monospace, monospace; font-size: 12px; }
+.tenant-create-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.45);
+}
+.tenant-create-overlay-panel {
+    background: #fff;
+    padding: 24px 32px;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    text-align: center;
+    max-width: 360px;
+}
+.tenant-create-overlay-panel strong { display: block; margin-bottom: 8px; font-size: 1.1rem; }
+.tenant-provision-screen { max-width: 640px; }
+.tenant-provision-steps {
+    margin: 16px 0 0;
+    padding: 0 0 0 20px;
+    color: var(--muted);
+    font-size: 14px;
+}
+.tenant-provision-steps li { margin: 6px 0; }
+.tenant-provision-steps li.is-active { color: var(--text); font-weight: 600; }
+.tenant-provision-steps li.is-done { color: #15803d; }
 .db-credentials-status-pending {
     background: #fffbeb;
     border: 1px solid #fcd34d;

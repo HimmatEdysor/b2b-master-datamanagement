@@ -68,6 +68,12 @@ class TenantDbAdminCapabilityService
      */
     public function assertReadyForProvisioning(): void
     {
+        if ($this->usesRelaxedLocalProvisioningChecks()) {
+            $this->assertLocalSharedProvisioningReady();
+
+            return;
+        }
+
         $audit = $this->audit();
 
         if ($audit['ok']) {
@@ -80,6 +86,42 @@ class TenantDbAdminCapabilityService
         throw new \RuntimeException(
             'Tenant database admin is not ready: '.$detail
         );
+    }
+
+    protected function usesRelaxedLocalProvisioningChecks(): bool
+    {
+        return app()->environment('local')
+            && TenantDbAdmin::usesSharedTenantCredentials()
+            && (TenantDbAdmin::socket() !== '' || TenantDbAdmin::isLoopbackHost(TenantDbAdmin::host()));
+    }
+
+    /**
+     * Local XAMPP: shared user often has b2b_tenant_%.* only (no CREATE on *.*).
+     *
+     * @throws \RuntimeException
+     */
+    protected function assertLocalSharedProvisioningReady(): void
+    {
+        $template = (string) config('master.template_database');
+
+        try {
+            $pdo = TenantDbAdmin::adminPdo();
+        } catch (\PDOException $e) {
+            throw new \RuntimeException(
+                'Cannot connect to MySQL for provisioning: '.TenantDbAdmin::connectionErrorMessage($e)
+            );
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1'
+        );
+        $stmt->execute([$template]);
+
+        if (! $stmt->fetchColumn()) {
+            throw new \RuntimeException(
+                "Template database [{$template}] not found. Check TENANT_TEMPLATE_DATABASE in .env."
+            );
+        }
     }
 
     /**

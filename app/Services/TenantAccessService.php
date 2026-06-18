@@ -31,6 +31,13 @@ class TenantAccessService
             );
         }
 
+        $provisioner = app(\App\Services\TenantProvisionerService::class);
+        if (in_array($companyStatus, ['failed', 'provisioning'], true)) {
+            $provisioner->syncSchemaReadyProvisionState($tenant->fresh());
+            $tenant->refresh();
+            $companyStatus = (string) $tenant->status;
+        }
+
         if ($companyStatus !== 'active') {
             return $this->deny(
                 $this->messageForCompanyStatus($companyStatus),
@@ -106,8 +113,6 @@ class TenantAccessService
                 );
             }
         }
-
-        $provisioner = app(\App\Services\TenantProvisionerService::class);
 
         if (! $tenant->isDatabaseProvisioned() && ! $provisioner->isProvisionWorkflowComplete($tenant)) {
             return $this->deny(

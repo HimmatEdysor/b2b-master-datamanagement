@@ -27,6 +27,11 @@ class TenantDbAdmin
         return (int) config('master.tenant_db_port', 3306);
     }
 
+    public static function socket(): string
+    {
+        return (string) config('master.tenant_db_socket', '');
+    }
+
     public static function username(): string
     {
         return (string) config('master.tenant_db_username', 'root');
@@ -225,11 +230,16 @@ class TenantDbAdmin
 
     public static function dsn(?string $database = null): string
     {
-        $dsn = sprintf(
-            'mysql:host=%s;port=%d;charset=utf8mb4',
-            self::host(),
-            self::port()
-        );
+        $socket = self::socket();
+        if ($socket !== '') {
+            $dsn = 'mysql:unix_socket='.str_replace([';', ' '], '', $socket).';charset=utf8mb4';
+        } else {
+            $dsn = sprintf(
+                'mysql:host=%s;port=%d;charset=utf8mb4',
+                self::host(),
+                self::port()
+            );
+        }
 
         if ($database !== null && $database !== '') {
             $dsn .= ';dbname='.str_replace([';', ' '], '', $database);
@@ -301,8 +311,65 @@ class TenantDbAdmin
     /**
      * CRM / resolve API: b2b_master + company database_name (wildcard b2b_tenant_% on RDS).
      *
-     * @return array{host: string, port: int, database: string, username: string, password: string}
+     * @return array{host: string, port: int, database: string, username: string, password: string, unix_socket?: string}
      */
+    /**
+     * @param  list<string>|null  $tables  Defaults to master.tenant_provision_required_tables
+     */
+    public static function tenantHasRequiredTables(string $databaseName, ?array $tables = null): bool
+    {
+        $databaseName = trim($databaseName);
+        if ($databaseName === '') {
+            return false;
+        }
+
+        $tables = $tables ?? config('master.tenant_provision_required_tables', ['users']);
+        if (! is_array($tables) || $tables === []) {
+            $tables = ['users'];
+        }
+
+        try {
+            $pdo = self::adminPdo();
+            foreach ($tables as $table) {
+                if (! is_string($table) || $table === '') {
+                    continue;
+                }
+                $stmt = $pdo->prepare(
+                    'SELECT COUNT(*) FROM information_schema.tables
+                     WHERE table_schema = ? AND table_name = ?'
+                );
+                $stmt->execute([$databaseName, $table]);
+                if ((int) $stmt->fetchColumn() < 1) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public static function tenantDatabaseExists(string $databaseName): bool
+    {
+        $databaseName = trim($databaseName);
+        if ($databaseName === '') {
+            return false;
+        }
+
+        try {
+            $pdo = self::adminPdo();
+            $stmt = $pdo->prepare(
+                'SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1'
+            );
+            $stmt->execute([$databaseName]);
+
+            return (bool) $stmt->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public static function tenantConnectionConfig(\App\Models\Tenant $tenant): array
     {
         $database = (string) $tenant->database_name;
@@ -312,13 +379,23 @@ class TenantDbAdmin
 
         self::assertCanProvision();
 
-        return [
+        $host = (string) ($tenant->database_host ?: self::host());
+        $socket = self::socket();
+
+        $config = [
             'host' => (string) ($tenant->database_host ?: self::host()),
             'port' => (int) ($tenant->database_port ?: self::port()),
             'database' => $database,
             'username' => self::username(),
             'password' => self::password(),
         ];
+
+        // Local dev (XAMPP): prefer socket when host is loopback.
+        if ($socket !== '' && self::isLoopbackHost($host)) {
+            $config['unix_socket'] = $socket;
+        }
+
+        return $config;
     }
 
     public static function tenantDatabasePrefix(): string
@@ -499,8 +576,7 @@ class TenantDbAdmin
     {
         $command = [
             'mysqldump',
-            '-h', self::host(),
-            '-P', (string) self::port(),
+            ...self::mysqlCliConnectionArgs(),
             '-u', self::username(),
             ...self::mysqldumpFlags($schemaOnly),
             $database,
@@ -539,12 +615,24 @@ class TenantDbAdmin
         return array_merge(
             [
                 'mysql',
-                '-h', self::host(),
-                '-P', (string) self::port(),
+                ...self::mysqlCliConnectionArgs(),
                 '-u', self::username(),
             ],
             $args
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected static function mysqlCliConnectionArgs(): array
+    {
+        $socket = self::socket();
+        if ($socket !== '') {
+            return ['-S', $socket];
+        }
+
+        return ['-h', self::host(), '-P', (string) self::port()];
     }
 
     /**

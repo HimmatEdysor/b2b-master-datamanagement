@@ -30,6 +30,41 @@ if (! function_exists('master_queue_uses_background_worker')) {
     }
 }
 
+if (! function_exists('master_broadcast_uses_reverb')) {
+    function master_broadcast_uses_reverb(): bool
+    {
+        return config('broadcasting.default') === 'reverb'
+            && config('broadcasting.connections.reverb.key');
+    }
+}
+
+if (! function_exists('master_reverb_echo_config')) {
+    /**
+     * Sanitized Laravel Echo + Reverb client options for admin Blade scripts.
+     *
+     * @return array{key: string, authEndpoint: string, wsHost: string, wsPort: int, wssPort: int, forceTLS: bool}|null
+     */
+    function master_reverb_echo_config(): ?array
+    {
+        if (! master_broadcast_uses_reverb()) {
+            return null;
+        }
+
+        $reverb = config('broadcasting.connections.reverb');
+        $opts = is_array($reverb['options'] ?? null) ? $reverb['options'] : [];
+        $port = (int) ($opts['port'] ?? 8080);
+
+        return [
+            'key' => (string) ($reverb['key'] ?? ''),
+            'authEndpoint' => url('/broadcasting/auth'),
+            'wsHost' => (string) ($opts['host'] ?? 'localhost'),
+            'wsPort' => $port,
+            'wssPort' => $port,
+            'forceTLS' => ($opts['scheme'] ?? 'http') === 'https',
+        ];
+    }
+}
+
 if (! function_exists('master_env')) {
     /** Use TENANT_DB_* when set; otherwise fall back to DB_* (empty string counts as unset). */
     function master_env(string $primary, string $fallback, string $default = ''): string

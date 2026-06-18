@@ -22,7 +22,45 @@ class MasterSettingsService
                 return;
             }
 
+            $skipKeys = [];
+            if (env('APP_ENV') === 'local') {
+                // In local dev, prefer .env for URL + DNS settings (DB-stored production settings often break localhost links).
+                $skipKeys = [
+                    'tenant_base_domain',
+                    'tenant_base_domain_production',
+                    'tenant_url_scheme',
+                    'tenant_crm_port',
+                    'tenant_crm_port_force',
+                    'master_url',
+                    'master_domain',
+                    'custom_domain_server_ip',
+                    'custom_domain_cname_target',
+                    'custom_domain_ssl_email',
+                    'custom_domain_ssl_webroot',
+                    'dns_provider',
+                    'dns_auto_link_subdomains',
+                    'dns_cloudflare_zone_id',
+                    'dns_cloudflare_base_domain',
+                    'dns_cloudflare_proxied',
+                    'dns_route53_hosted_zone_id',
+                    'dns_route53_base_domain',
+                    'dns_route53_region',
+                    // In local dev, prefer .env for DB provisioning settings (Web settings are usually production/RDS).
+                    'tenant_db_host',
+                    'tenant_db_port',
+                    'tenant_db_username',
+                    'tenant_db_password',
+                    'tenant_db_shared_credentials',
+                    'tenant_db_grant_admin_on_create',
+                    'tenant_db_user_hosts',
+                ];
+            }
+
             foreach ($this->storedMap() as $key => $raw) {
+                if (in_array($key, $skipKeys, true)) {
+                    continue;
+                }
+
                 $field = $this->fieldDefinition($key);
                 if ($field === null || $raw === null || $raw === '') {
                     continue;

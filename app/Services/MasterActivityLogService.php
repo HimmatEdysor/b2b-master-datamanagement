@@ -349,8 +349,7 @@ class MasterActivityLogService
                     continue;
                 }
 
-                $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-                foreach (array_reverse($lines) as $line) {
+                foreach ($this->tailLinesMatching($path, $needle, $limit * 3) as $line) {
                     if (! str_contains($line, $needle)) {
                         continue;
                     }
@@ -382,6 +381,50 @@ class MasterActivityLogService
         usort($rows, fn (array $a, array $b): int => strcmp($b['at'], $a['at']));
 
         return array_slice($rows, 0, $limit);
+    }
+
+    /**
+     * Read only the tail of a log file (avoids loading multi-GB logs into memory).
+     *
+     * @return list<string>
+     */
+    protected function tailLinesMatching(string $path, string $needle, int $maxMatches = 60): array
+    {
+        if (! is_readable($path)) {
+            return [];
+        }
+
+        $size = filesize($path);
+        if ($size === false || $size === 0) {
+            return [];
+        }
+
+        $chunkSize = min($size, 512000);
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return [];
+        }
+
+        fseek($handle, -$chunkSize, SEEK_END);
+        $chunk = fread($handle, $chunkSize) ?: '';
+        fclose($handle);
+
+        $lines = array_reverse(preg_split('/\r\n|\r|\n/', $chunk) ?: []);
+        $matches = [];
+
+        foreach ($lines as $line) {
+            if ($line === '' || ! str_contains($line, $needle)) {
+                continue;
+            }
+
+            $matches[] = $line;
+
+            if (count($matches) >= $maxMatches) {
+                break;
+            }
+        }
+
+        return $matches;
     }
 
     /**

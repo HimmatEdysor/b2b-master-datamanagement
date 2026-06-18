@@ -31,6 +31,7 @@ class TenantProvisionerService
         protected ProvisionTenantQueueService $provisionQueue,
         protected TenantDatabaseSchemaCloneService $schemaClone,
         protected TenantDbAdminCapabilityService $dbCapabilities,
+        protected TenantProvisioningBroadcastService $provisioningBroadcast,
     ) {}
 
     /**
@@ -53,6 +54,19 @@ class TenantProvisionerService
      */
     public function isProvisionWorkflowComplete(Tenant $tenant): bool
     {
+        // Fast path: trust the tenant row (set at end of the provisioning job).
+        if ($tenant->provisioning_stage === 'completed') {
+            return true;
+        }
+
+        // Avoid expensive DB/schema checks when we already have the required credentials stored.
+        $mysqlUserDone = $this->mysqlCredentialsReady($tenant);
+        $crmAdminDone = $tenant->hasCrmAdminPassword();
+        if ($tenant->database_name && $mysqlUserDone && $crmAdminDone
+            && ! $this->provisionQueue->isActivelyProvisioning($tenant)) {
+            return true;
+        }
+
         $progress = $this->provisioningProgress($tenant);
 
         return ($progress['clone_done'] ?? false)
@@ -62,12 +76,63 @@ class TenantProvisionerService
     }
 
     /**
-     * Mark Active when DB work finished but status stuck on failed/provisioning (common on RDS shared user).
+     * Clone finished in MySQL but master row still failed/provisioning — fix status for CRM + resolve.
      */
+    public function syncSchemaReadyProvisionState(Tenant $tenant): bool
+    {
+        if ($this->provisionQueue->isActivelyProvisioning($tenant)) {
+            return false;
+        }
+
+        $databaseName = $tenant->database_name;
+        if ($databaseName === null || $databaseName === '' || ! $this->tenantHasProvisionedSchema($databaseName)) {
+            return false;
+        }
+
+        if ($tenant->status === 'active' && $tenant->provisioning_stage === 'completed' && $tenant->isDatabaseProvisioned()) {
+            return false;
+        }
+
+        $updates = [
+            'status' => 'active',
+            'provisioning_stage' => 'completed',
+            'provision_error' => null,
+            'database_host' => (string) ($tenant->database_host ?: TenantDbAdmin::host()),
+            'database_port' => (int) ($tenant->database_port ?: TenantDbAdmin::port()),
+        ];
+
+        if (TenantDbAdmin::usesSharedTenantCredentials()) {
+            $updates['database_username'] = TenantDbAdmin::username();
+            $updates['database_password'] = TenantDbAdmin::password();
+        }
+
+        $tenant->update($updates);
+        $tenant->refresh();
+
+        if (! $tenant->hasCrmAdminPassword()) {
+            try {
+                $this->defaultUserService->provisionDefaultAdmin($tenant->fresh());
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Could not create default CRM admin after schema sync', [
+                    'tenant_id' => $tenant->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $this->resolver->forgetHostCache($tenant);
+
+        return true;
+    }
+
     public function syncCompletedProvisionState(Tenant $tenant): bool
     {
         if ($this->provisionQueue->isActivelyProvisioning($tenant)) {
             return false;
+        }
+
+        if ($this->syncSchemaReadyProvisionState($tenant)) {
+            return true;
         }
 
         if (! $this->isProvisionWorkflowComplete($tenant)) {
@@ -138,10 +203,14 @@ class TenantProvisionerService
         if ($this->canTrustProvisionCompleteFromRow($tenant, $mysqlUserDone, $crmAdminDone)) {
             $cloneDone = true;
             $adminDbError = null;
-        } elseif ($databaseName !== null && $databaseName !== '') {
+        } elseif ($databaseName !== null && $databaseName !== '' && $this->shouldCheckProvisionedSchemaNow($tenant, $mysqlUserDone, $crmAdminDone)) {
             $check = $this->evaluateProvisionedSchema($tenant, $databaseName);
             $cloneDone = $check['clone_done'];
             $adminDbError = $check['admin_db_error'];
+        } elseif ($databaseName !== null && $databaseName !== '') {
+            // Avoid slow DB connections on the tenant show page; infer from status/stage only.
+            $cloneDone = $this->inferCloneDoneFromStage($tenant);
+            $adminDbError = null;
         }
 
         $stage = $tenant->provisioning_stage;
@@ -188,10 +257,39 @@ class TenantProvisionerService
         return $result;
     }
 
+    /**
+     * Provisioning progress is displayed on every admin tenant show view; do not attempt
+     * a tenant MySQL connection unless it materially changes what the admin should do next.
+     */
+    protected function shouldCheckProvisionedSchemaNow(Tenant $tenant, bool $mysqlUserDone, bool $crmAdminDone): bool
+    {
+        // If all other steps are done, the schema check is the only missing signal.
+        if ($mysqlUserDone && $crmAdminDone) {
+            return true;
+        }
+
+        // Avoid DB schema checks during live polling (admin page hits this frequently).
+        // We infer progress from stages until the job is complete or needs retry.
+
+        if ($this->needsProvisioningRetry($tenant) || $this->isProvisioningStalled($tenant)) {
+            return true;
+        }
+
+        return $tenant->provisioning_stage === 'cloning';
+    }
+
     protected function mysqlCredentialsReady(Tenant $tenant): bool
     {
         if (TenantDbAdmin::usesSharedTenantCredentials()) {
-            return TenantDbAdmin::username() !== '' && TenantDbAdmin::password() !== '';
+            if (TenantDbAdmin::username() === '') {
+                return false;
+            }
+
+            if (TenantDbAdmin::password() !== '') {
+                return true;
+            }
+
+            return TenantDbAdmin::socket() !== '' || TenantDbAdmin::isLoopbackHost(TenantDbAdmin::host());
         }
 
         return $tenant->hasDatabaseUsername() && $tenant->hasDatabasePassword();
@@ -307,6 +405,38 @@ class TenantProvisionerService
         return true;
     }
 
+    /**
+     * Fast progress for admin UI (no tenant MySQL schema checks).
+     *
+     * @return array<string, mixed>
+     */
+    public function lightweightProvisioningProgress(Tenant $tenant): array
+    {
+        $stage = $tenant->provisioning_stage;
+        $cloneDone = in_array($stage, ['mysql_user', 'seeding', 'crm_admin', 'completed'], true);
+        $mysqlDone = in_array($stage, ['seeding', 'crm_admin', 'completed'], true)
+            || $this->mysqlCredentialsReady($tenant);
+        $crmDone = $stage === 'completed' || $tenant->hasCrmAdminPassword();
+
+        $stageKey = is_string($stage) && $stage !== '' ? $stage : 'queued';
+
+        return [
+            'clone_done' => $cloneDone,
+            'mysql_user_done' => $mysqlDone,
+            'crm_admin_done' => $crmDone,
+            'can_resume' => false,
+            'stage' => $stage,
+            'stage_label' => $this->provisioningStageLabel($stage),
+            'percent' => $this->provisioningBroadcast->percentForStage($stageKey),
+            'is_queued' => $this->isProvisioningQueued($tenant),
+            'is_stalled' => false,
+            'needs_retry' => false,
+            'incomplete_steps' => [],
+            'error_message' => null,
+            'admin_db_error' => null,
+        ];
+    }
+
     public function provisioningStageLabel(?string $stage): string
     {
         return match ($stage) {
@@ -323,9 +453,10 @@ class TenantProvisionerService
         };
     }
 
-    public function setProvisioningStage(Tenant $tenant, string $stage): void
+    public function setProvisioningStage(Tenant $tenant, string $stage, ?string $detail = null): void
     {
         $tenant->update(['provisioning_stage' => $stage]);
+        $this->provisioningBroadcast->stage($tenant->fresh(), $stage, $detail);
     }
 
     public function isProvisioningQueued(Tenant $tenant): bool
@@ -364,18 +495,11 @@ class TenantProvisionerService
             || ($tenant->status === 'pending' && $this->canResumeAfterClone($tenant));
     }
 
-    public function queueProvisioning(Tenant $tenant, ?User $by): void
+    public function queueProvisioning(Tenant $tenant, ?User $by, bool $verifyRedisEnqueue = false): void
     {
         if (! $this->canApprove($tenant)) {
             throw new \InvalidArgumentException('This company cannot be provisioned.');
         }
-
-        $this->dbCapabilities->assertReadyForProvisioning();
-
-        $this->provisionQueue->dispatchProvisioning(
-            $tenant->id,
-            $by?->id,
-        );
 
         $tenant->update([
             'status' => 'provisioning',
@@ -387,6 +511,22 @@ class TenantProvisionerService
         ]);
 
         $this->log($tenant, 'approve', 'ok', 'Provisioning queued for background worker', $by);
+
+        if ($verifyRedisEnqueue) {
+            $this->provisionQueue->dispatchProvisioning($tenant->id, $by?->id, true);
+
+            return;
+        }
+
+        // Push to Redis immediately (fast). afterResponse() was running the job during
+        // request teardown and could break the JSON response to the browser.
+        if (config('queue.default') === 'redis') {
+            ProvisionTenantJob::dispatch($tenant->id, $by?->id);
+
+            return;
+        }
+
+        ProvisionTenantJob::dispatch($tenant->id, $by?->id)->afterResponse();
     }
 
     /**
@@ -428,6 +568,7 @@ class TenantProvisionerService
                 'provision_error' => $message,
                 'provisioning_stage' => 'failed',
             ]);
+            $this->provisioningBroadcast->failed($tenant->fresh(), $message);
             $this->log($tenant, 'provision', 'failed', $message, $by);
             throw $e;
         }
@@ -498,6 +639,7 @@ class TenantProvisionerService
                 'provision_error' => $message,
                 'provisioning_stage' => 'failed',
             ]);
+            $this->provisioningBroadcast->failed($tenant->fresh(), $message);
             $this->log($tenant, 'provision', 'failed', $message, $by);
             throw $e;
         }
@@ -520,7 +662,10 @@ class TenantProvisionerService
         ]);
 
         $this->setProvisioningStage($tenant, 'seeding');
-        $this->seedDataService->seedFromTemplate($tenant);
+        $this->seedDataService->seedFromTemplate(
+            $tenant,
+            fn (int $current, int $total, string $table) => $this->provisioningBroadcast->seedTable($tenant, $current, $total, $table),
+        );
         $this->activityLog->database(
             'seed_reference',
             'ok',
@@ -545,6 +690,8 @@ class TenantProvisionerService
             $billedAt = null;
             $expiresAt = null;
         }
+
+        $this->provisioningBroadcast->completed($tenant);
 
         $tenant->update([
             'status' => 'active',
@@ -719,7 +866,12 @@ class TenantProvisionerService
     protected function cloneDatabaseWithPdo(Tenant $tenant, string $from, string $to): void
     {
         try {
-            $stats = $this->schemaClone->provisionTenantDatabase($from, $to);
+            $stats = $this->schemaClone->provisionTenantDatabase(
+                $from,
+                $to,
+                null,
+                fn (int $current, int $total, string $table) => $this->provisioningBroadcast->cloneTable($tenant, $current, $total, $table),
+            );
         } catch (\Throwable $e) {
             $this->activityLog->database(
                 'clone_database',

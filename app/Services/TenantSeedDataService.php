@@ -11,7 +11,10 @@ class TenantSeedDataService
      * Copy master/reference rows from the template database into a new tenant DB.
      * Runs after schema clone (structure only); skips tables that already have rows.
      */
-    public function seedFromTemplate(Tenant $tenant): void
+    /**
+     * @param  callable(int, int, string): void|null  $onTableProgress  ($current, $total, $tableName)
+     */
+    public function seedFromTemplate(Tenant $tenant, ?callable $onTableProgress = null): void
     {
         $from = config('master.template_database');
         $to = $tenant->database_name;
@@ -21,13 +24,20 @@ class TenantSeedDataService
             return;
         }
 
+        $seedSteps = count($tables) + 1;
         $sqlMode = (string) (DB::selectOne('SELECT @@SESSION.sql_mode AS mode')->mode ?? '');
 
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
         DB::statement("SET SESSION sql_mode = ''");
 
         try {
+            $step = 0;
             foreach ($tables as $table) {
+                $step++;
+                if ($onTableProgress !== null) {
+                    $onTableProgress($step, $seedSteps, $table);
+                }
+
                 if ($table === 'universities') {
                     $this->copyUniversitiesWithBlankUrmFields($from, $to);
 
@@ -35,6 +45,10 @@ class TenantSeedDataService
                 }
 
                 $this->copyTableIfEmpty($from, $to, $table);
+            }
+
+            if ($onTableProgress !== null) {
+                $onTableProgress($seedSteps, $seedSteps, 'web_settings');
             }
 
             $this->seedWebSettingsAdminTheme($from, $to);

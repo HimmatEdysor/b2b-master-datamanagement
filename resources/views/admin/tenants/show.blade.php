@@ -306,7 +306,8 @@
 @push('scripts')
     <script src="{{ asset('js/copy-to-clipboard.js') }}"></script>
     @if($provisioningQueued ?? false)
-        <script src="{{ asset('js/tenant-provision-poll.js') }}"></script>
+        @include('partials.tenant-provision-echo')
+        <script src="{{ asset('js/tenant-provision-live.js') }}"></script>
     @endif
     <script src="{{ asset('js/tenant-manage-subscription.js') }}"></script>
 @endpush

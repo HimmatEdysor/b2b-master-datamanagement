@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\CompanyRegistrationController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\WebsiteController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [WebsiteController::class, 'home'])->name('home');
@@ -35,6 +36,10 @@ Route::post('/support/ticket/{ticketNumber}/reply', [SupportTicketController::cl
 Route::get('/register', [CompanyRegistrationController::class, 'create'])->name('register');
 Route::post('/register', [CompanyRegistrationController::class, 'store'])->name('register.store');
 Route::get('/register/success', [CompanyRegistrationController::class, 'success'])->name('register.success');
+
+Route::middleware(['web', 'auth'])->group(function () {
+    Broadcast::routes();
+});
 
 Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', DashboardController::class)
@@ -57,73 +62,94 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
             ->name('logs.destroy');
     });
 
-    Route::middleware('permission:tenants.view')->group(function () {
-        Route::post('tenants/{tenant}/approve', [TenantController::class, 'approve'])
+    Route::prefix('tenants')->name('tenants.')->middleware('permission:tenants.view')->group(function () {
+        // Static routes MUST be above `{tenant}` resource routes.
+        Route::get('migration-queue', [TenantController::class, 'migrationQueue'])
+            ->middleware('permission:tenants.edit')
+            ->name('migration-queue');
+        Route::post('migrate-databases', [TenantController::class, 'migrateDatabases'])
+            ->middleware('permission:tenants.edit')
+            ->name('migrate-databases');
+
+        Route::post('{tenant}/approve', [TenantController::class, 'approve'])
             ->middleware('permission:tenants.approve')
-            ->name('tenants.approve');
-        Route::post('tenants/{tenant}/reconcile-provisioning', [TenantController::class, 'reconcileProvisioning'])
+            ->name('approve');
+        Route::post('{tenant}/reconcile-provisioning', [TenantController::class, 'reconcileProvisioning'])
             ->middleware('permission:tenants.approve')
-            ->name('tenants.reconcile-provisioning');
-        Route::get('tenants/{tenant}/provisioning-status', [TenantController::class, 'provisioningStatus'])
-            ->name('tenants.provisioning-status');
-        Route::post('tenants/{tenant}/database-user', [TenantController::class, 'regenerateDatabaseUser'])
+            ->name('reconcile-provisioning');
+        Route::get('{tenant}/provisioning-status', [TenantController::class, 'provisioningStatus'])
+            ->name('provisioning-status');
+        Route::get('{tenant}/provisioning', [TenantController::class, 'provisioning'])
+            ->name('provisioning');
+
+        Route::post('{tenant}/database-user', [TenantController::class, 'regenerateDatabaseUser'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.database-user');
-        Route::put('tenants/{tenant}/database-password', [TenantController::class, 'updateDatabasePassword'])
+            ->name('database-user');
+        Route::put('{tenant}/database-password', [TenantController::class, 'updateDatabasePassword'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.database-password');
-        Route::put('tenants/{tenant}/manage', [TenantController::class, 'updateManage'])
+            ->name('database-password');
+        Route::put('{tenant}/manage', [TenantController::class, 'updateManage'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.manage');
-        Route::post('tenants/{tenant}/crm-admin-password', [TenantController::class, 'regenerateCrmAdminPassword'])
+            ->name('manage');
+
+        Route::post('{tenant}/crm-admin-password', [TenantController::class, 'regenerateCrmAdminPassword'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.crm-admin-password');
-        Route::put('tenants/{tenant}/crm-admin-password', [TenantController::class, 'updateCrmAdminPassword'])
+            ->name('crm-admin-password');
+        Route::put('{tenant}/crm-admin-password', [TenantController::class, 'updateCrmAdminPassword'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.crm-admin-password.update');
-        Route::post('tenants/{tenant}/reject', [TenantController::class, 'reject'])
+            ->name('crm-admin-password.update');
+
+        Route::post('{tenant}/reject', [TenantController::class, 'reject'])
             ->middleware('permission:tenants.approve')
-            ->name('tenants.reject');
-        Route::post('tenants/{tenant}/suspend', [TenantController::class, 'suspend'])
+            ->name('reject');
+        Route::post('{tenant}/suspend', [TenantController::class, 'suspend'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.suspend');
-        Route::post('tenants/{tenant}/reactivate', [TenantController::class, 'reactivate'])
+            ->name('suspend');
+        Route::post('{tenant}/reactivate', [TenantController::class, 'reactivate'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.reactivate');
-        Route::get('tenants/migration-queue', [TenantController::class, 'migrationQueue'])
+            ->name('reactivate');
+
+        Route::post('{tenant}/migrate-database', [TenantController::class, 'migrateDatabase'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.migration-queue');
-        Route::post('tenants/{tenant}/migrate-database', [TenantController::class, 'migrateDatabase'])
+            ->name('migrate-database');
+
+        Route::post('{tenant}/domains', [TenantDomainController::class, 'store'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.migrate-database');
-        Route::post('tenants/{tenant}/domains', [TenantDomainController::class, 'store'])
+            ->name('domains.store');
+        Route::post('{tenant}/domains/{domain}/primary', [TenantDomainController::class, 'setPrimary'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.domains.store');
-        Route::post('tenants/{tenant}/domains/{domain}/primary', [TenantDomainController::class, 'setPrimary'])
+            ->name('domains.primary');
+        Route::delete('{tenant}/domains/{domain}', [TenantDomainController::class, 'destroy'])
             ->middleware('permission:tenants.edit')
-            ->name('tenants.domains.primary');
-        Route::delete('tenants/{tenant}/domains/{domain}', [TenantDomainController::class, 'destroy'])
-            ->middleware('permission:tenants.edit')
-            ->name('tenants.domains.destroy');
-        Route::post('tenants/{tenant}/domains/dns-provision-all', [TenantDomainController::class, 'provisionAllDns'])
+            ->name('domains.destroy');
+
+        Route::post('{tenant}/domains/dns-provision-all', [TenantDomainController::class, 'provisionAllDns'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.domains.dns-provision-all');
-        Route::post('tenants/{tenant}/domains/{domain}/dns-provision', [TenantDomainController::class, 'provisionDns'])
+            ->name('domains.dns-provision-all');
+        Route::post('{tenant}/domains/{domain}/dns-provision', [TenantDomainController::class, 'provisionDns'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.domains.dns-provision');
-        Route::post('tenants/{tenant}/domains/{domain}/dns-verify', [TenantDomainController::class, 'verifyDns'])
+            ->name('domains.dns-provision');
+        Route::post('{tenant}/domains/{domain}/dns-verify', [TenantDomainController::class, 'verifyDns'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.domains.dns-verify');
-        Route::post('tenants/{tenant}/domains/{domain}/ssl-check', [TenantDomainController::class, 'checkSsl'])
+            ->name('domains.dns-verify');
+        Route::post('{tenant}/domains/{domain}/ssl-check', [TenantDomainController::class, 'checkSsl'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.domains.ssl-check');
-        Route::post('tenants/{tenant}/domains/{domain}/ssl-complete', [TenantDomainController::class, 'markSslComplete'])
+            ->name('domains.ssl-check');
+        Route::post('{tenant}/domains/{domain}/ssl-complete', [TenantDomainController::class, 'markSslComplete'])
             ->middleware('permission:tenants.edit,tenants.approve')
-            ->name('tenants.domains.ssl-complete');
-        Route::post('tenants/migrate-databases', [TenantController::class, 'migrateDatabases'])
-            ->middleware('permission:tenants.edit')
-            ->name('tenants.migrate-databases');
-        Route::resource('tenants', TenantController::class)->except(['destroy']);
+            ->name('domains.ssl-complete');
+
+        Route::resource('/', TenantController::class)
+            ->parameters(['' => 'tenant'])
+            ->except(['destroy'])
+            ->names([
+                'index' => 'index',
+                'create' => 'create',
+                'store' => 'store',
+                'show' => 'show',
+                'edit' => 'edit',
+                'update' => 'update',
+            ]);
     });
 
     Route::middleware('permission:blog.view')->group(function () {

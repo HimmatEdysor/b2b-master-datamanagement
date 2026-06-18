@@ -140,9 +140,29 @@ class Tenant extends Model
             return false;
         }
 
+        // CRM admin password is created at the end of a successful provision job.
+        if ($this->hasCrmAdminPassword()) {
+            return true;
+        }
+
+        if (in_array($this->status, ['pending', 'provisioning'], true)) {
+            return $this->provisioning_stage === 'completed';
+        }
+
         if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
-            return \App\Support\TenantDbAdmin::username() !== ''
-                && \App\Support\TenantDbAdmin::password() !== '';
+            if (\App\Support\TenantDbAdmin::tenantHasRequiredTables($this->database_name)) {
+                return true;
+            }
+
+            if ($this->hasCrmAdminPassword()) {
+                return true;
+            }
+
+            if ($this->provisioning_stage === 'completed' || $this->status === 'active') {
+                return \App\Support\TenantDbAdmin::username() !== '';
+            }
+
+            return false;
         }
 
         return $this->database_host !== null
@@ -158,15 +178,40 @@ class Tenant extends Model
     }
 
     /**
-     * @return array{host: string, port: int, database: string, username: string, password: string}
+     * True when CRM migrate can connect (shared user + physical DB exists, or full provision).
+     */
+    public function hasMigratableDatabase(): bool
+    {
+        if ($this->database_name === null || $this->database_name === '') {
+            return false;
+        }
+
+        if ($this->isDatabaseProvisioned()) {
+            return true;
+        }
+
+        if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
+            return \App\Support\TenantDbAdmin::tenantDatabaseExists($this->database_name);
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{host: string, port: int, database: string, username: string, password: string, unix_socket?: string}
      */
     public function connectionConfig(): array
     {
         if (\App\Support\TenantDbAdmin::usesSharedTenantCredentials()) {
             if (! $this->isDatabaseProvisioned()) {
+                $hint = $this->status === 'provisioning' || $this->provisioning_stage === 'queued'
+                    ? 'Wait for provisioning to finish or open the company and click Retry.'
+                    : 'Open the company in admin and run Approve & provision database.';
+
                 throw new \RuntimeException(
-                    "Company [{$this->slug}] database is not ready. Approve provisioning (uses shared MySQL user "
-                    .\App\Support\TenantDbAdmin::username().').'
+                    "Company [{$this->slug}] database is not ready (status: {$this->status}, stage: "
+                    .($this->provisioning_stage ?? '—').'). '.$hint
+                    .' Shared MySQL user: '.\App\Support\TenantDbAdmin::username().'.'
                 );
             }
 

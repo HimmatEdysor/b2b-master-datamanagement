@@ -20,8 +20,15 @@ class TenantDatabaseSchemaCloneService
      *
      * @return array{tables: int, views: int, method: string, database_created: bool, admin_granted: bool}
      */
-    public function provisionTenantDatabase(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
-    {
+    /**
+     * @param  callable(int, int, string): void|null  $onTableProgress  ($current, $total, $tableName)
+     */
+    public function provisionTenantDatabase(
+        string $fromDatabase,
+        string $toDatabase,
+        ?PDO $pdo = null,
+        ?callable $onTableProgress = null,
+    ): array {
         $pdo = $pdo ?? $this->adminPdo();
 
         if (! $this->schemaExists($pdo, $fromDatabase)) {
@@ -33,7 +40,7 @@ class TenantDatabaseSchemaCloneService
         TenantDbAdmin::createTenantDatabase($pdo, $toDatabase);
         $adminGranted = TenantDbAdmin::grantAndVerifyAdminAccessToTenantDatabase($pdo, $toDatabase);
 
-        $clone = $this->cloneSchemaInto($fromDatabase, $toDatabase, $pdo);
+        $clone = $this->cloneSchemaInto($fromDatabase, $toDatabase, $pdo, $onTableProgress);
 
         return [
             ...$clone,
@@ -57,8 +64,15 @@ class TenantDatabaseSchemaCloneService
      *
      * @return array{tables: int, views: int, method: string}
      */
-    public function cloneSchemaInto(string $fromDatabase, string $toDatabase, ?PDO $pdo = null): array
-    {
+    /**
+     * @param  callable(int, int, string): void|null  $onTableProgress
+     */
+    public function cloneSchemaInto(
+        string $fromDatabase,
+        string $toDatabase,
+        ?PDO $pdo = null,
+        ?callable $onTableProgress = null,
+    ): array {
         $pdo = $pdo ?? $this->adminPdo();
 
         if (! $this->schemaExists($pdo, $toDatabase)) {
@@ -71,6 +85,7 @@ class TenantDatabaseSchemaCloneService
         }
 
         $to = TenantDbAdmin::quoteIdentifier($toDatabase);
+        $totalObjects = count($tables) + count($this->viewNames($pdo, $fromDatabase));
 
         $pdo->exec('SET SESSION FOREIGN_KEY_CHECKS=0');
         $pdo->exec("USE {$to}");
@@ -79,12 +94,18 @@ class TenantDatabaseSchemaCloneService
         foreach ($tables as $table) {
             $pdo->exec($this->fetchCreateTable($pdo, $fromDatabase, $table));
             $tableCount++;
+            if ($onTableProgress !== null) {
+                $onTableProgress($tableCount, $totalObjects, $table);
+            }
         }
 
         $viewCount = 0;
         foreach ($this->viewNames($pdo, $fromDatabase) as $view) {
             $pdo->exec($this->fetchCreateView($pdo, $fromDatabase, $view));
             $viewCount++;
+            if ($onTableProgress !== null) {
+                $onTableProgress($tableCount + $viewCount, $totalObjects, $view);
+            }
         }
 
         $pdo->exec('SET SESSION FOREIGN_KEY_CHECKS=1');

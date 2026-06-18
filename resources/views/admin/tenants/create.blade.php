@@ -16,9 +16,13 @@
         @include('admin.tenants._form', ['isCreate' => true])
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Create company</button>
+            <button type="submit" class="btn btn-primary" id="tenant-create-submit">Create company</button>
             <a href="{{ route('admin.tenants.index') }}" class="btn btn-outline">Cancel</a>
         </div>
     </form>
 </div>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/tenant-create-submit.js') }}"></script>
+@endpush

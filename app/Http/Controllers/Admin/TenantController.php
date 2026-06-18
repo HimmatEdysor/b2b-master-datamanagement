@@ -21,6 +21,7 @@ use Carbon\Carbon;
 use App\Support\TenantDomainHost;
 use App\Support\TenantSlug;
 use App\Support\TenantUrl;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -65,7 +66,6 @@ class TenantController extends Controller
                         ->orWhere('contact_phone', 'like', $term);
                 });
             })
-            ->orderByRaw("FIELD(status, 'pending', 'provisioning', 'failed', 'active', 'suspended', 'rejected')")
             ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
@@ -94,7 +94,7 @@ class TenantController extends Controller
         return view('admin.tenants.create', compact('plans'));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $this->validateTenant($request);
 
@@ -126,42 +126,100 @@ class TenantController extends Controller
             try {
                 $this->provisioner->queueProvisioning($tenant->fresh(), Auth::user());
             } catch (\Throwable $e) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'Created but could not queue provisioning: '.$e->getMessage(),
+                        'redirect' => route('admin.tenants.show', $tenant),
+                    ], 422);
+                }
+
                 return redirect()
                     ->route('admin.tenants.show', $tenant)
                     ->with('error', 'Created but could not queue provisioning: '.$e->getMessage());
             }
 
+            $redirect = route('admin.tenants.provisioning', $tenant);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'ok' => true,
+                    'tenant_id' => $tenant->id,
+                    'redirect' => $redirect,
+                    'message' => 'Company created. Database clone is running in the background.',
+                ]);
+            }
+
             return redirect()
-                ->route('admin.tenants.show', $tenant)
-                ->with('success', 'Company created. Database provisioning is running in the queue — keep this page open or refresh for status.')
-                ->withFragment('tenant-manage');
+                ->to($redirect)
+                ->with('success', 'Company created. Database provisioning is running in the queue.');
+        }
+
+        $redirect = route('admin.tenants.show', $tenant);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'tenant_id' => $tenant->id,
+                'redirect' => $redirect,
+            ]);
         }
 
         return redirect()
-            ->route('admin.tenants.show', $tenant)
+            ->to($redirect)
             ->with('success', 'Company saved as pending. Approve to create database and go live.');
+    }
+
+    public function provisioning(Tenant $tenant): View|RedirectResponse
+    {
+        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+
+        if ($tenant->status === 'active' && $tenant->provisioning_stage === 'completed') {
+            return redirect()
+                ->route('admin.tenants.show', $tenant)
+                ->with('success', 'Provisioning is already complete.');
+        }
+
+        if (! $provisionQueue->isActivelyProvisioning($tenant) && $tenant->status !== 'provisioning') {
+            return redirect()->route('admin.tenants.show', $tenant);
+        }
+
+        $progress = $this->provisioner->lightweightProvisioningProgress($tenant);
+
+        return view('admin.tenants.provisioning', [
+            'tenant' => $tenant,
+            'progress' => $progress,
+            'provisioningQueued' => true,
+        ]);
     }
 
     public function show(Tenant $tenant): View
     {
+      
         $tenant->load([
             'domains',
             'subscriptionPlan',
             'approver',
             'operationLogs' => fn ($q) => $q->with('user')->latest()->limit(20),
         ]);
-
+       
         $crmHost = TenantUrl::hostForTenant($tenant);
         $crmFullUrl = TenantUrl::urlForTenant($tenant);
         $resolveUrl = $tenant->isActive() && $crmHost
             ? url('/api/v1/tenant/resolve?host='.$crmHost)
             : null;
 
-        $subdomainCheckStats = TenantSubdomainCheckStat::query()
-            ->where('tenant_id', $tenant->id)
-            ->orWhere('slug', $tenant->slug)
-            ->orderByDesc('check_count')
-            ->get();
+        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $activelyProvisioning = $provisionQueue->isActivelyProvisioning($tenant);
+
+        $subdomainCheckStats = $activelyProvisioning
+            ? collect()
+            : TenantSubdomainCheckStat::query()
+                ->where('tenant_id', $tenant->id)
+                ->orWhere('slug', $tenant->slug)
+                ->orderByDesc('check_count')
+                ->limit(50)
+                ->get();
 
         $plans = SubscriptionPlan::query()->where('is_active', true)->orderBy('name')->get();
         $planBillingMeta = $plans->mapWithKeys(fn (SubscriptionPlan $plan) => [
@@ -173,21 +231,28 @@ class TenantController extends Controller
             ? ['ok' => true]
             : ['ok' => false, 'message' => $access['message'] ?? 'CRM access denied'];
 
-        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
-        if ($provisionQueue->clearStuckQueuedState($tenant->fresh())) {
+        if (! $activelyProvisioning && $provisionQueue->clearStuckQueuedState($tenant->fresh())) {
             $tenant->refresh();
             session()->flash('warning', 'Queue job was missing — status reset. Click Retry to provision again.');
+        } elseif (! $activelyProvisioning && $provisionQueue->clearStuckProvisioningWithoutStage($tenant->fresh())) {
+            $tenant->refresh();
+            session()->flash('warning', 'Provisioning did not run. Status set to Failed — click Retry below.');
         }
 
-        if ($this->provisioner->syncCompletedProvisionState($tenant->fresh())) {
-            $tenant->refresh();
-        } elseif ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
-            $tenant->refresh();
+        // Skip heavy DB / failed_jobs checks while the worker is still running.
+        if (! $activelyProvisioning) {
+            if ($this->provisioner->syncCompletedProvisionState($tenant->fresh())) {
+                $tenant->refresh();
+            } elseif ($provisionQueue->reconcileProvisioningState($tenant->fresh())) {
+                $tenant->refresh();
+            }
         }
 
         $canProvision = $this->provisioner->canApprove($tenant);
-        $provisionProgress = $this->provisioner->provisioningProgress($tenant);
-        $provisioningQueued = $this->provisioner->isProvisioningQueued($tenant);
+        $provisioningQueued = $provisionQueue->isActivelyProvisioning($tenant);
+        $provisionProgress = $provisioningQueued
+            ? $this->provisioner->lightweightProvisioningProgress($tenant)
+            : [];
         $databaseReady = $tenant->isDatabaseProvisioned();
         $statusNeedsFix = $databaseReady && in_array($tenant->status, ['failed', 'provisioning'], true);
         $showProvisionPanel = $canProvision || $statusNeedsFix;
@@ -206,8 +271,9 @@ class TenantController extends Controller
         );
         $dnsAutoOk = collect($dnsAutoResults)->where('verified', true);
         $dnsAutoFail = collect($dnsAutoResults)->where('verified', false);
-        $domainActivityLog = app(\App\Services\MasterActivityLogService::class)
-            ->recentForTenant($tenant->id);
+        $domainActivityLog = $activelyProvisioning
+            ? []
+            : app(\App\Services\MasterActivityLogService::class)->recentForTenant($tenant->id);
 
         return view('admin.tenants.show', compact(
             'tenant',
@@ -262,6 +328,7 @@ class TenantController extends Controller
 
     public function edit(Tenant $tenant): View
     {
+       
         $plans = SubscriptionPlan::query()->where('is_active', true)->orderBy('name')->get();
         $tenant->load('domains');
 
@@ -430,23 +497,80 @@ class TenantController extends Controller
                 );
             }
 
-            $this->provisioner->queueProvisioning($tenant, Auth::user());
+            $this->provisioner->queueProvisioning($tenant, Auth::user(), verifyRedisEnqueue: true);
         } catch (\Throwable $e) {
             return back()
                 ->with('error', 'Provisioning failed: '.$e->getMessage())
                 ->withFragment('tenant-manage');
         }
 
-        return back()
-            ->with('success', 'Provisioning queued. This page updates automatically when it finishes.')
-            ->withFragment('tenant-manage');
+        return redirect()
+            ->route('admin.tenants.provisioning', $tenant)
+            ->with('success', 'Provisioning queued. Live progress below.');
     }
 
     public function provisioningStatus(Tenant $tenant): \Illuminate\Http\JsonResponse
     {
         $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $tenant->refresh();
+
+        if ($provisionQueue->isActivelyProvisioning($tenant)) {
+            $progress = $this->provisioner->lightweightProvisioningProgress($tenant);
+
+            return response()->json([
+                'status' => $tenant->status,
+                'company_status' => 'provisioning',
+                'company_status_label' => 'Provisioning — '.$progress['stage_label'],
+                'can_set_active' => false,
+                'stage' => $progress['stage'],
+                'stage_label' => $progress['stage_label'],
+                'percent' => $progress['percent'] ?? null,
+                'provision_error' => null,
+                'progress' => $progress,
+                'done' => false,
+                'failed' => false,
+                'stalled' => false,
+            ]);
+        }
+
         $provisionQueue->reconcileProvisioningState($tenant->fresh());
         $tenant->refresh();
+
+        // Fast path: once workflow is complete, avoid slow DB schema checks during polling.
+        if ($this->provisioner->isProvisionWorkflowComplete($tenant)) {
+            $statusLabels = config('master.tenant_status_labels', []);
+            $companyStatus = $tenant->status === 'active' ? 'active' : 'provisioning';
+            $companyStatusLabel = $companyStatus === 'active'
+                ? ($statusLabels['active'] ?? 'Active')
+                : 'Provisioning — Complete';
+
+            return response()->json([
+                'status' => $tenant->status,
+                'company_status' => $companyStatus,
+                'company_status_label' => $companyStatusLabel,
+                'can_set_active' => true,
+                'stage' => $tenant->provisioning_stage,
+                'stage_label' => 'Complete',
+                'provision_error' => null,
+                'progress' => [
+                    'clone_done' => true,
+                    'mysql_user_done' => true,
+                    'crm_admin_done' => true,
+                    'can_resume' => false,
+                    'is_queued' => false,
+                    'is_stalled' => false,
+                    'needs_retry' => false,
+                    'incomplete_steps' => [],
+                    'error_message' => null,
+                    'admin_db_error' => null,
+                    'stage' => $tenant->provisioning_stage,
+                    'stage_label' => 'Complete',
+                ],
+                'done' => $tenant->status === 'active',
+                'failed' => false,
+                'stalled' => false,
+            ]);
+        }
 
         $progress = $this->provisioner->provisioningProgress($tenant);
         $errorMessage = $progress['error_message'] ?? $tenant->provision_error;

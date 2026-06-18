@@ -51,7 +51,11 @@
         : '—';
 @endphp
 <div class="card tenant-detail-card tenant-manage-card span-full" id="tenant-manage"
-     @if($provisioningQueued) data-provisioning-poll-url="{{ route('admin.tenants.provisioning-status', $tenant) }}" @endif>
+     @if($provisioningQueued)
+         data-tenant-id="{{ $tenant->id }}"
+         data-use-reverb="{{ master_broadcast_uses_reverb() ? '1' : '0' }}"
+         data-provisioning-poll-url="{{ route('admin.tenants.provisioning-status', $tenant) }}"
+     @endif>
     <h2 class="tenant-detail-heading">Manage company</h2>
     <p class="form-hint tenant-manage-lead">
         One place for subscription, database provisioning, and CRM access for <strong>{{ $tenant->slug }}</strong>.

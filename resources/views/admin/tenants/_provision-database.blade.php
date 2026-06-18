@@ -65,12 +65,24 @@
             <p class="tenant-provision-error-message" style="margin:8px 0 0;font-family:ui-monospace,monospace;font-size:0.9em;white-space:pre-wrap">{{ $provisionError }}</p>
         </div>
     @elseif($isQueued)
-        <div id="tenant-provision-poll" class="tenant-provision-poll" data-status-url="{{ route('admin.tenants.provisioning-status', $tenant) }}">
+        <div id="tenant-provision-poll" class="tenant-provision-poll"
+             data-tenant-id="{{ $tenant->id }}"
+             data-use-reverb="{{ master_broadcast_uses_reverb() ? '1' : '0' }}"
+             data-status-url="{{ route('admin.tenants.provisioning-status', $tenant) }}">
             <p class="db-credentials-status db-credentials-status-pending" style="margin-top:0">
                 <strong>Provisioning in progress</strong> —
-                <span id="tenant-provision-stage-label">{{ $stageLabel }}</span>.
-                This page refreshes when finished.
+                <span id="tenant-provision-stage-label">{{ $stageLabel }}</span>
+                <span id="tenant-provision-percent" class="tenant-provision-percent">0%</span>
             </p>
+            <div class="tenant-provision-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Database provisioning progress">
+                <div class="tenant-provision-progress-bar" id="tenant-provision-progress-bar" style="width:0%"></div>
+            </div>
+            <p id="tenant-provision-stage-detail" class="form-hint tenant-provision-stage-detail" hidden></p>
+            @if(! master_broadcast_uses_reverb())
+                <p class="form-hint" style="margin-top:8px">
+                    Set <code>BROADCAST_CONNECTION=reverb</code> in <code>.env</code> and run <code>php artisan reverb:start</code> for live progress (no polling).
+                </p>
+            @endif
             <p id="tenant-provision-poll-error" class="detail-alert detail-alert-error" role="alert" hidden style="margin-top:8px"></p>
             @if(master_can_view_horizon())
                 <p class="form-hint tenant-provision-worker-hint" style="margin-top:8px">
@@ -140,7 +152,7 @@
                 </div>
             </form>
         @else
-            <p class="form-hint">Provisioning is running — this page will refresh automatically.</p>
+            <p class="form-hint">Provisioning is running — progress updates live below.</p>
         @endif
     @endcan
 </div>

@@ -14,9 +14,15 @@ class ProvisionTenantQueueService
     /**
      * Push a fresh job and confirm it reached Redis (fixes "queued" UI with empty Horizon).
      */
-    public function dispatchProvisioning(int $tenantId, ?int $approvedByUserId): void
+    public function dispatchProvisioning(int $tenantId, ?int $approvedByUserId, bool $verifyEnqueued = false): void
     {
         if (config('queue.default') !== 'redis') {
+            ProvisionTenantJob::dispatch($tenantId, $approvedByUserId);
+
+            return;
+        }
+
+        if (! $verifyEnqueued) {
             ProvisionTenantJob::dispatch($tenantId, $approvedByUserId);
 
             return;
@@ -114,6 +120,33 @@ class ProvisionTenantQueueService
         if ($tenant->status === 'provisioning' && ! $tenant->isDatabaseProvisioned()) {
             $tenant->update(['status' => 'failed']);
         }
+
+        return true;
+    }
+
+    /**
+     * status=provisioning but stage empty and no queue job (broken create / lost job).
+     */
+    public function clearStuckProvisioningWithoutStage(Tenant $tenant): bool
+    {
+        if ($tenant->status !== 'provisioning' || $tenant->isDatabaseProvisioned()) {
+            return false;
+        }
+
+        if ($this->isActivelyProvisioning($tenant)) {
+            return false;
+        }
+
+        if ($this->hasJobPayloadForTenant($this->queueName(), $tenant->id)) {
+            return false;
+        }
+
+        $tenant->update([
+            'status' => 'failed',
+            'provisioning_stage' => 'failed',
+            'provision_error' => $tenant->provision_error
+                ?: 'Provisioning never started (no queue job). Click Retry on the company page.',
+        ]);
 
         return true;
     }

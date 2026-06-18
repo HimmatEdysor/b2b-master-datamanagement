@@ -68,6 +68,17 @@ class TenantResolverService
 
     public function toApiPayload(Tenant $tenant): array
     {
+        if (! $tenant->isDatabaseProvisioned()) {
+            app(TenantProvisionerService::class)->syncSchemaReadyProvisionState($tenant->fresh());
+            $tenant->refresh();
+        }
+
+        if (! $tenant->isDatabaseProvisioned()) {
+            throw new \RuntimeException(
+                "Company [{$tenant->slug}] database is not provisioned yet (finish provisioning before CRM login)."
+            );
+        }
+
         $plan = $tenant->subscriptionPlan;
         $db = $tenant->connectionConfig();
 
@@ -84,6 +95,8 @@ class TenantResolverService
                 'database' => $db['database'],
                 'username' => $db['username'],
                 'password' => $db['password'],
+                // Local dev (XAMPP): allow CRM to connect via socket when provided.
+                'unix_socket' => $db['unix_socket'] ?? '',
             ],
             'branding' => [
                 'app_name' => $tenant->brand_name ?: $tenant->name,

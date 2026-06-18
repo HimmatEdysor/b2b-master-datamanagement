@@ -47,6 +47,7 @@ return [
     */
     'tenant_db_host' => env('TENANT_DB_HOST', env('DB_HOST', '127.0.0.1')),
     'tenant_db_port' => env('TENANT_DB_PORT', env('DB_PORT', '3306')),
+    'tenant_db_socket' => env('TENANT_DB_SOCKET', env('DB_SOCKET', '')),
     'tenant_db_username' => env('TENANT_DB_USERNAME', env('DB_USERNAME', 'root')),
     'tenant_db_password' => env('TENANT_DB_PASSWORD', env('DB_PASSWORD', '')),
 

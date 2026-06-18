@@ -65,7 +65,10 @@ class TenantDatabaseUserService
         $username = TenantDbAdmin::username();
         $password = TenantDbAdmin::password();
 
-        if ($username === '' || $password === '') {
+        // Local XAMPP: root may have empty password; allow only on loopback/socket.
+        $passwordRequired = ! (TenantDbAdmin::socket() !== '' || TenantDbAdmin::isLoopbackHost(TenantDbAdmin::host()));
+
+        if ($username === '' || ($passwordRequired && $password === '')) {
             throw new \RuntimeException(
                 'TENANT_DB_SHARED_CREDENTIALS is enabled but TENANT_DB_USERNAME or TENANT_DB_PASSWORD is empty.'
             );

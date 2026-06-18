@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ProvisionTenantQueueService;
 use App\Services\TenantProvisionerService;
+use App\Services\TenantProvisioningBroadcastService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -96,6 +97,8 @@ class ProvisionTenantJob implements ShouldQueue
             'provision_error' => $message,
             'provisioning_stage' => 'failed',
         ]);
+
+        app(TenantProvisioningBroadcastService::class)->failed($tenant->fresh(), $message);
 
         Log::error('ProvisionTenantJob failed', [
             'tenant_id' => $this->tenantId,
