@@ -27,6 +27,8 @@ else
   source "$(dirname "$0")/prepare-permissions.sh" 2>/dev/null || true
 fi
 
+export_docker_db_hosts
+
 echo "==> Master entrypoint v3 (compose env only — .env file is never modified)"
 
 if [ ! -f .env ]; then

@@ -92,15 +92,40 @@ clear_mount_dir() {
     rm -rf "${dir:?}"/* "${dir:?}"/.[!.]* 2>/dev/null || true
 }
 
-# Docker local mode: 127.0.0.1 is the container loopback — use host.docker.internal.
+# Docker: 127.0.0.1 / localhost in .env means host MySQL — remapped inside containers.
+is_loopback_db_host() {
+  case "$1" in
+    127.0.0.1|localhost|::1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 docker_db_host() {
   local host="${1:-127.0.0.1}"
-  if [ -f /.dockerenv ] && [ "${DB_MODE:-local}" = "local" ]; then
-    case "$host" in
-      127.0.0.1|localhost|::1) host="host.docker.internal" ;;
-    esac
+  case "${DB_MODE:-local}" in
+    container)
+      printf '%s' "mysql"
+      return
+      ;;
+    rds)
+      printf '%s' "$host"
+      return
+      ;;
+  esac
+  if [ -f /.dockerenv ]; then
+    if [ -n "${HOST_DB_HOST:-}" ] && is_loopback_db_host "$host"; then
+      host="$HOST_DB_HOST"
+    elif is_loopback_db_host "$host"; then
+      host="host.docker.internal"
+    fi
   fi
   printf '%s' "$host"
+}
+
+export_docker_db_hosts() {
+  [ -f /.dockerenv ] || return 0
+  export DB_HOST="$(docker_db_host "${DB_HOST:-127.0.0.1}")"
+  export TENANT_DB_HOST="$(docker_db_host "${TENANT_DB_HOST:-${DB_HOST}}")"
 }
 
 # mysqladmin prints "mysqld is alive" to stdout — must silence when used in $(...) or if tests.
