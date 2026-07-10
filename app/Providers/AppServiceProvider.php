@@ -27,6 +27,11 @@ class AppServiceProvider extends ServiceProvider
     {
         app(MasterSettingsService::class)->applyToConfig();
 
+        $appUrl = rtrim((string) config('app.url'), '/');
+        if ($appUrl !== '') {
+            \Illuminate\Support\Facades\URL::forceRootUrl($appUrl);
+        }
+
         if (! config('master.tenant_crm_path')) {
             config(['master.tenant_crm_path' => TenantCrmPath::resolve()]);
         }

@@ -23,8 +23,7 @@ class MasterSettingsService
             }
 
             $skipKeys = [];
-            if (env('APP_ENV') === 'local') {
-                // In local dev, prefer .env for URL + DNS settings (DB-stored production settings often break localhost links).
+            if ($this->shouldPreferEnvUrls()) {
                 $skipKeys = [
                     'tenant_base_domain',
                     'tenant_base_domain_production',
@@ -154,6 +153,17 @@ class MasterSettingsService
     public function clearCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+    }
+
+    protected function shouldPreferEnvUrls(): bool
+    {
+        if (env('APP_ENV') === 'local') {
+            return true;
+        }
+
+        $host = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        return in_array($host, ['localhost', '127.0.0.1'], true);
     }
 
     /**
