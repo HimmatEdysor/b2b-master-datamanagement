@@ -1,1 +1,39 @@
-/vendor/
+# Dependencies
+/node_modules
+/vendor
+
+# Laravel
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/bootstrap/cache/*.php
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+!.env.docker
+.env live
+
+# Logs & cache
+*.log
+.phpunit.cache
+.phpunit.result.cache
+
+# IDE & OS
+/.fleet
+/.idea
+/.vscode
+.DS_Store
+Thumbs.db
+
+# Homestead / auth
+Homestead.json
+Homestead.yaml
+auth.json
+
+# npm / yarn
+npm-debug.log
+yarn-error.log

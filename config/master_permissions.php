@@ -2,9 +2,9 @@
 
 return [
 
-    'default_admin_email' => env('MASTER_DEFAULT_ADMIN_EMAIL', 'admin@master.local'),
-    'default_admin_password' => env('MASTER_DEFAULT_ADMIN_PASSWORD', 'password'),
-    'default_admin_name' => env('MASTER_DEFAULT_ADMIN_NAME', 'Master Admin'),
+    'default_admin_email' => env('MASTER_DEFAULT_ADMIN_EMAIL', 'himmat@edysor'),
+    'default_admin_password' => env('MASTER_DEFAULT_ADMIN_PASSWORD', 'himmat@edysor.in'),
+    'default_admin_name' => env('MASTER_DEFAULT_ADMIN_NAME', 'Himmat'),
 
     'groups' => [
         'Dashboard' => ['dashboard.view'],
