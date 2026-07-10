@@ -63,6 +63,7 @@ if [ -n "${DB_MODE:-}" ] || [ -n "${DB_HOST:-}" ]; then
   if [ -n "${APP_ENV:-}" ]; then
     set_env_key APP_ENV "${APP_ENV}"
   fi
+  set_env_key APP_DEBUG "${APP_DEBUG:-false}" 1
   set_env_key MASTER_APP_URL "${MASTER_APP_URL:-${APP_URL:-http://localhost:8001}}"
   set_env_key MASTER_DOMAIN "${MASTER_DOMAIN:-localhost:8001}"
   set_env_key TENANT_CRM_PATH "${TENANT_CRM_PATH:-/var/www/tenant-crm}"
@@ -112,11 +113,12 @@ ensure_app_key() {
     set_env_key APP_KEY "" 1
   fi
   echo "==> Generating APP_KEY..."
-  php artisan key:generate --force
+  php artisan key:generate --force || write_app_key_direct
   if ! grep -qE '^APP_KEY=base64:' .env 2>/dev/null; then
     echo "FATAL: APP_KEY was not written to .env"
     return 1
   fi
+  finalize_env_file .env
 }
 
 if [ -n "${CRM_MASTER_API_TOKEN:-}" ]; then
@@ -135,6 +137,9 @@ if [ "${FAST_START:-0}" = "1" ] && vendor_is_ok; then
     php artisan view:clear 2>/dev/null || true
     rm -f bootstrap/cache/config.php 2>/dev/null || true
   fi
+  finalize_env_file .env
+  assert_env_readable
+  assert_laravel_boot
   echo "==> Starting: $*"
   if [ "$#" -eq 0 ]; then
     set -- /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
@@ -202,6 +207,10 @@ if [ -f artisan ]; then
   php artisan view:clear 2>/dev/null || true
   rm -f bootstrap/cache/config.php 2>/dev/null || true
 fi
+
+finalize_env_file .env
+assert_env_readable
+assert_laravel_boot
 
 if [ "$#" -eq 0 ]; then
   set -- /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

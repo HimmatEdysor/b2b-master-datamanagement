@@ -31,6 +31,63 @@ set_env_key() {
   fi
   printf '%s=%s\n' "$key" "$value" >>"$tmp"
   mv "$tmp" "$env_file"
+  if [ "$(id -u)" = "0" ] && id www-data &>/dev/null; then
+    chown www-data:www-data "$env_file" 2>/dev/null || true
+  fi
+  chmod 640 "$env_file" 2>/dev/null || chmod 644 "$env_file" 2>/dev/null || true
+}
+
+finalize_env_file() {
+  local env_file="${1:-.env}"
+  [ -f "$env_file" ] || return 0
+  if [ "$(id -u)" = "0" ] && id www-data &>/dev/null; then
+    chown www-data:www-data "$env_file" 2>/dev/null || true
+  fi
+  chmod 640 "$env_file" 2>/dev/null || chmod 644 "$env_file" 2>/dev/null || true
+}
+
+write_app_key_direct() {
+  local key="base64:$(openssl rand -base64 32 | tr -d '\n')"
+  set_env_key APP_KEY "$key" 1
+}
+
+assert_env_readable() {
+  [ -f .env ] || return 0
+  if ! id www-data &>/dev/null; then
+    return 0
+  fi
+  if ! su -s /bin/bash www-data -c 'test -r .env' 2>/dev/null; then
+    echo "FATAL: php-fpm user (www-data) cannot read .env — fix permissions"
+    ls -la .env 2>/dev/null || true
+    finalize_env_file .env
+    if ! su -s /bin/bash www-data -c 'test -r .env' 2>/dev/null; then
+      exit 1
+    fi
+  fi
+  if ! su -s /bin/bash www-data -c 'grep -qE "^APP_KEY=base64:" .env' 2>/dev/null; then
+    echo "FATAL: APP_KEY missing or invalid in .env (www-data view)"
+    su -s /bin/bash www-data -c 'grep "^APP_KEY=" .env 2>/dev/null || echo "(no APP_KEY line)"' || true
+    exit 1
+  fi
+}
+
+assert_laravel_boot() {
+  [ -f artisan ] || return 0
+  echo "==> Verifying Laravel boots as www-data..."
+  local out rc=0
+  out=$(su -s /bin/bash www-data -c 'php artisan about --no-ansi 2>&1' 2>&1) || rc=$?
+  if [ "$rc" != "0" ]; then
+    echo "FATAL: Laravel cannot boot:"
+    echo "$out"
+    if [ -f storage/logs/laravel.log ]; then
+      echo "--- tail storage/logs/laravel.log ---"
+      tail -25 storage/logs/laravel.log 2>/dev/null || true
+    fi
+    if [ "${APP_DEBUG:-false}" != "true" ] && [ "${APP_DEBUG:-0}" != "1" ]; then
+      echo "Tip: set APP_DEBUG=1 in B2B_CRM/.env and recreate master to see errors in the browser"
+    fi
+    exit 1
+  fi
 }
 
 # Named volume mount points cannot be removed — only their contents.
