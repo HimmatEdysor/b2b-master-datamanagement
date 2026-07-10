@@ -108,8 +108,15 @@ ensure_app_key() {
     echo "==> Cannot generate APP_KEY — vendor/ is incomplete"
     return 1
   fi
+  if ! grep -qE '^APP_KEY=' .env 2>/dev/null; then
+    set_env_key APP_KEY "" 1
+  fi
   echo "==> Generating APP_KEY..."
   php artisan key:generate --force
+  if ! grep -qE '^APP_KEY=base64:' .env 2>/dev/null; then
+    echo "FATAL: APP_KEY was not written to .env"
+    return 1
+  fi
 }
 
 if [ -n "${CRM_MASTER_API_TOKEN:-}" ]; then
