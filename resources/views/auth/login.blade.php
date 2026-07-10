@@ -17,7 +17,7 @@
 <div class="box">
     <h1 style="margin:0 0 8px">Master Portal</h1>
     <p style="color:#666;margin:0 0 16px">Manage companies & tenant databases</p>
-    <form method="POST" action="{{ route('login') }}">
+    <form method="POST" action="{{ route('login', [], false) }}">
         @csrf
         <label>Email</label>
         <input type="email" name="email" value="{{ old('email') }}" required autofocus>

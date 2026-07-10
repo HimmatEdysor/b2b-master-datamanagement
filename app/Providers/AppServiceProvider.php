@@ -7,6 +7,7 @@ use App\Services\MasterSettingsService;
 use App\Support\TenantCrmPath;
 use App\Support\TenantUrl;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -29,7 +30,19 @@ class AppServiceProvider extends ServiceProvider
 
         $appUrl = rtrim((string) config('app.url'), '/');
         if ($appUrl !== '') {
-            \Illuminate\Support\Facades\URL::forceRootUrl($appUrl);
+            URL::forceRootUrl($appUrl);
+        }
+
+        $scheme = parse_url($appUrl, PHP_URL_SCHEME);
+        $host = parse_url($appUrl, PHP_URL_HOST);
+        $useHttps = $scheme === 'https'
+            || (config('app.env') === 'production' && ! in_array($host, ['localhost', '127.0.0.1'], true));
+
+        if ($useHttps) {
+            URL::forceScheme('https');
+            if (env('SESSION_SECURE_COOKIE') === null) {
+                config(['session.secure' => true]);
+            }
         }
 
         if (! config('master.tenant_crm_path')) {
