@@ -13,7 +13,10 @@ RUN rm -f /etc/nginx/sites-enabled/default \
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/scripts/env-file.sh /usr/local/bin/env-file.sh
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN grep -qE '^<<<<<<<|^>>>>>>>' /usr/local/bin/entrypoint.sh && \
+    echo "BUILD FAILED: docker/scripts/entrypoint.sh has git merge conflict markers" && exit 1 || true
 RUN chmod +x /usr/local/bin/env-file.sh /usr/local/bin/entrypoint.sh
+RUN git config --global safe.directory '*' 2>/dev/null || true
 
 # prepare-permissions.sh lives in B2B_CRM; master compose bind-mounts it at runtime.
 

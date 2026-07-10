@@ -64,3 +64,86 @@ mysql_ping_silent() {
   fi
   "${ping[@]}" --silent >/dev/null 2>&1
 }
+
+prepare_composer_env() {
+  export COMPOSER_ALLOW_SUPERUSER=1
+  export COMPOSER_MEMORY_LIMIT="${COMPOSER_MEMORY_LIMIT:--1}"
+  export COMPOSER_MAX_PARALLEL_HTTP=1
+  export COMPOSER_PROCESS_TIMEOUT=0
+  export GIT_CONFIG_GLOBAL="${GIT_CONFIG_GLOBAL:-/tmp/composer-gitconfig}"
+  git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory '*' 2>/dev/null || true
+  git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory "$(pwd)" 2>/dev/null || true
+  git config --global --add safe.directory '*' 2>/dev/null || true
+  local app_dir
+  app_dir="$(pwd)"
+  if [ -d "$app_dir/.git" ]; then
+    git config --global --add safe.directory "$app_dir" 2>/dev/null || true
+    git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory "$app_dir" 2>/dev/null || true
+  fi
+}
+
+restore_composer_lock_from_git() {
+  composer_lock_needs_php84 || return 0
+  [ -d .git ] || return 1
+  prepare_composer_env
+  echo "==> composer.lock requires PHP 8.4+ — trying git restore..."
+  git fetch origin 2>/dev/null || true
+  local ref
+  for ref in "origin/main" "origin/master" "origin/$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"; do
+    if git cat-file -e "$ref:composer.lock" 2>/dev/null; then
+      if git checkout "$ref" -- composer.lock composer.json 2>/dev/null; then
+        if ! composer_lock_needs_php84; then
+          echo "==> Restored composer.lock from $ref"
+          return 0
+        fi
+      fi
+    fi
+  done
+  return 1
+}
+
+composer_lock_needs_php84() {
+  [ -f composer.lock ] || return 1
+  grep -q '"name": "symfony/clock"' composer.lock 2>/dev/null || return 1
+  grep -A3 '"name": "symfony/clock"' composer.lock | grep -qE '"version": "v8\.' 2>/dev/null
+}
+
+composer_install_app() {
+  local production="${1:-0}"
+  prepare_composer_env
+  local php_ver
+  php_ver="$(php -r 'echo PHP_VERSION;')"
+  composer config platform.php "$php_ver" 2>/dev/null || true
+  composer config --global process-timeout 0 2>/dev/null || true
+  composer config --global cache-dir /tmp/composer-cache 2>/dev/null || true
+
+  if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
+    restore_composer_lock_from_git || true
+  fi
+
+  if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
+    echo "FATAL: composer.lock requires Symfony 8.1 / PHP 8.4+ but container runs PHP ${php_ver}"
+    echo "On the server (as ubuntu), run:"
+    echo "  cd /var/www/B2B_CRM && ./docker/scripts/fix-master-composer-lock.sh"
+    echo "Or manually:"
+    echo "  cd /var/www/b2b-master-datamanagement && git fetch origin && git checkout origin/main -- composer.lock composer.json"
+    exit 1
+  fi
+
+  local args=(install --prefer-dist --no-interaction --no-progress)
+  if [ "$production" = "1" ]; then
+    args+=(--no-dev --optimize-autoloader)
+  fi
+
+  local attempt
+  for attempt in 1 2 3; do
+    echo "==> composer install attempt ${attempt}/3 (parallel downloads disabled)..."
+    if composer "${args[@]}"; then
+      return 0
+    fi
+    echo "==> composer install failed on attempt ${attempt}"
+    find vendor/composer -maxdepth 1 -name 'tmp-*' -delete 2>/dev/null || true
+    composer clear-cache 2>/dev/null || true
+  done
+  return 1
+}

@@ -4,9 +4,9 @@ set -e
 assert_no_merge_conflicts() {
   local file="$1"
   [ -f "$file" ] || return 0
-  if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$file"; then
+  if grep -qE '^<<<<<<<|^>>>>>>>' "$file"; then
     echo "FATAL: $file has unresolved git merge conflict markers (<<<<<<<)."
-    echo "Fix: git checkout HEAD -- docker/scripts/"
+    echo "Fix: cd /var/www/B2B_CRM && ./docker/scripts/recover-docker-scripts.sh"
     exit 1
   fi
 }
@@ -15,7 +15,6 @@ cd /var/www/html
 
 # shellcheck source=env-file.sh
 source "$(dirname "$0")/env-file.sh"
-assert_no_merge_conflicts "$0"
 assert_no_merge_conflicts "$(dirname "$0")/env-file.sh"
 if [ -f /var/www/tenant-crm/docker/scripts/prepare-permissions.sh ]; then
   assert_no_merge_conflicts /var/www/tenant-crm/docker/scripts/prepare-permissions.sh
@@ -61,6 +60,9 @@ if [ -n "${DB_MODE:-}" ] || [ -n "${DB_HOST:-}" ]; then
   set_env_key SESSION_DRIVER "${SESSION_DRIVER:-redis}"
   set_env_key QUEUE_CONNECTION "${QUEUE_CONNECTION:-redis}"
   set_env_key APP_URL "${APP_URL:-http://localhost:8001}"
+  if [ -n "${APP_ENV:-}" ]; then
+    set_env_key APP_ENV "${APP_ENV}"
+  fi
   set_env_key MASTER_APP_URL "${MASTER_APP_URL:-${APP_URL:-http://localhost:8001}}"
   set_env_key MASTER_DOMAIN "${MASTER_DOMAIN:-localhost:8001}"
   set_env_key TENANT_CRM_PATH "${TENANT_CRM_PATH:-/var/www/tenant-crm}"
@@ -127,13 +129,16 @@ if [ "${FAST_START:-0}" = "1" ] && vendor_is_ok; then
     rm -f bootstrap/cache/config.php 2>/dev/null || true
   fi
   echo "==> Starting: $*"
+  if [ "$#" -eq 0 ]; then
+    set -- /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+  fi
   exec "$@"
 fi
 
 NEED_COMPOSER=0
 if [ "${FORCE_COMPOSER:-0}" = "1" ] || ! vendor_is_ok; then
   NEED_COMPOSER=1
-elif [ "${APP_ENV:-local}" = "production" ] && [ -d vendor/nunomaduro/collision ]; then
+elif [ "${APP_ENV:-production}" = "production" ] && [ -d vendor/nunomaduro/collision ]; then
   NEED_COMPOSER=1
 fi
 
@@ -143,10 +148,10 @@ if [ "$NEED_COMPOSER" = "1" ] && [ -f composer.json ]; then
     clear_mount_dir vendor
   fi
   echo "==> Installing PHP dependencies (composer)..."
-  if [ "${APP_ENV:-local}" = "production" ]; then
-    composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+  if [ "${APP_ENV:-production}" = "production" ]; then
+    composer_install_app 1
   else
-    composer install --prefer-dist --no-interaction
+    composer_install_app 0
   fi
   if ! vendor_is_ok; then
     echo "FATAL: composer install finished but vendor/ is still broken"
