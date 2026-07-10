@@ -11,8 +11,9 @@ RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/scripts/env-file.sh /usr/local/bin/env-file.sh
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/env-file.sh /usr/local/bin/entrypoint.sh
 
 WORKDIR /var/www/html
 

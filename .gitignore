@@ -10,12 +10,11 @@
 /storage/pail
 /bootstrap/cache/*.php
 
-# Environment & secrets
+# Environment & secrets (keep only templates in repo)
 .env
 .env.*
 !.env.example
 !.env.docker
-.env live
 
 # Logs & cache
 *.log
