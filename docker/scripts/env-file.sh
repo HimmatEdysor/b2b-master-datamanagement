@@ -31,10 +31,6 @@ set_env_key() {
   fi
   printf '%s=%s\n' "$key" "$value" >>"$tmp"
   mv "$tmp" "$env_file"
-  if [ "$(id -u)" = "0" ] && id www-data &>/dev/null; then
-    chown www-data:www-data "$env_file" 2>/dev/null || true
-  fi
-  chmod 640 "$env_file" 2>/dev/null || chmod 644 "$env_file" 2>/dev/null || true
 }
 
 finalize_env_file() {
@@ -46,27 +42,25 @@ finalize_env_file() {
   chmod 640 "$env_file" 2>/dev/null || chmod 644 "$env_file" 2>/dev/null || true
 }
 
-write_app_key_direct() {
-  local key="base64:$(openssl rand -base64 32 | tr -d '\n')"
-  set_env_key APP_KEY "$key" 1
+app_key_configured() {
+  if [ -n "${APP_KEY:-}" ] && [[ "${APP_KEY}" == base64:* ]]; then
+    return 0
+  fi
+  [ -f .env ] && grep -qE '^APP_KEY=base64:' .env 2>/dev/null
 }
 
 assert_env_readable() {
-  [ -f .env ] || return 0
+  if [ ! -f .env ]; then
+    echo "FATAL: .env missing — create it: cp .env.example .env"
+    exit 1
+  fi
+  finalize_env_file .env
   if ! id www-data &>/dev/null; then
     return 0
   fi
   if ! su -s /bin/bash www-data -c 'test -r .env' 2>/dev/null; then
-    echo "FATAL: php-fpm user (www-data) cannot read .env — fix permissions"
+    echo "FATAL: php-fpm user (www-data) cannot read .env"
     ls -la .env 2>/dev/null || true
-    finalize_env_file .env
-    if ! su -s /bin/bash www-data -c 'test -r .env' 2>/dev/null; then
-      exit 1
-    fi
-  fi
-  if ! su -s /bin/bash www-data -c 'grep -qE "^APP_KEY=base64:" .env' 2>/dev/null; then
-    echo "FATAL: APP_KEY missing or invalid in .env (www-data view)"
-    su -s /bin/bash www-data -c 'grep "^APP_KEY=" .env 2>/dev/null || echo "(no APP_KEY line)"' || true
     exit 1
   fi
 }

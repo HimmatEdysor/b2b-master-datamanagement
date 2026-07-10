@@ -27,50 +27,15 @@ else
   source "$(dirname "$0")/prepare-permissions.sh" 2>/dev/null || true
 fi
 
-echo "==> Master entrypoint v2 (host.docker.internal + safe vendor clear)"
+echo "==> Master entrypoint v3 (compose env only — .env file is never modified)"
 
 if [ ! -f .env ]; then
-  if [ -f .env.example ]; then
-    echo "==> Creating .env from .env.example"
-    cp .env.example .env
-  fi
+  echo "FATAL: .env missing — create it on the host: cp .env.example .env"
+  exit 1
 fi
 
-# Docker local mode: use host.docker.internal (127.0.0.1 is container loopback).
-if [ -n "${DB_MODE:-}" ] || [ -n "${DB_HOST:-}" ]; then
-  echo "==> Syncing Docker DB/Redis endpoints into .env"
-  if [ "${DB_MODE:-local}" = "container" ]; then
-    DEFAULT_DB_HOST="mysql"
-  else
-    DEFAULT_DB_HOST=$(docker_db_host "${DB_HOST:-127.0.0.1}")
-  fi
-
-  set_env_key DB_CONNECTION "${DB_CONNECTION:-mysql}"
-  set_env_key DB_PORT "${DB_PORT:-3306}"
-  set_env_key DB_DATABASE "${DB_DATABASE:-b2b_master}"
-  set_env_key DB_USERNAME "${DB_USERNAME:-admin}" 1
-  set_env_key DB_PASSWORD "${DB_PASSWORD:-}" 1
-  set_env_key DB_SOCKET ""
-  set_env_key DB_HOST "$DEFAULT_DB_HOST" 1
-  set_env_key TENANT_DB_HOST "$(docker_db_host "${TENANT_DB_HOST:-${DB_HOST:-127.0.0.1}}")" 1
-  set_env_key TENANT_DB_PORT "${TENANT_DB_PORT:-${DB_PORT:-3306}}"
-  set_env_key REDIS_HOST "${REDIS_HOST:-redis}"
-  set_env_key REDIS_PORT "${REDIS_PORT:-6379}"
-  set_env_key CACHE_STORE "${CACHE_STORE:-redis}"
-  set_env_key SESSION_DRIVER "${SESSION_DRIVER:-redis}"
-  set_env_key QUEUE_CONNECTION "${QUEUE_CONNECTION:-redis}"
-  set_env_key APP_URL "${APP_URL:-http://localhost:8001}"
-  if [ -n "${APP_ENV:-}" ]; then
-    set_env_key APP_ENV "${APP_ENV}"
-  fi
-  set_env_key APP_DEBUG "${APP_DEBUG:-false}" 1
-  set_env_key MASTER_APP_URL "${MASTER_APP_URL:-${APP_URL:-http://localhost:8001}}"
-  set_env_key MASTER_DOMAIN "${MASTER_DOMAIN:-localhost:8001}"
-  set_env_key TENANT_CRM_PATH "${TENANT_CRM_PATH:-/var/www/tenant-crm}"
-  set_env_key TENANT_CRM_PORT "${TENANT_CRM_PORT:-8080}"
-  set_env_key TENANT_BASE_DOMAIN "${TENANT_BASE_DOMAIN:-localhost}"
-  set_env_key TENANT_URL_SCHEME "${TENANT_URL_SCHEME:-http}"
-fi
+# Docker DB/Redis/APP_* come from compose environment (clear_env=no in php-fpm).
+# Your .env file is left unchanged; container env overrides .env at runtime.
 
 MYSQL_WAIT_HOST=$(docker_db_host "${DB_HOST:-127.0.0.1}")
 echo "==> Waiting for MySQL at ${MYSQL_WAIT_HOST}:${DB_PORT:-3306} (mode: ${DB_MODE:-local})..."
@@ -99,31 +64,15 @@ vendor_is_ok() {
 }
 
 ensure_app_key() {
-  if [ ! -f artisan ] || [ ! -f .env ]; then
+  if [ ! -f artisan ]; then
     return 0
   fi
-  if grep -qE '^APP_KEY=base64:' .env 2>/dev/null; then
+  if app_key_configured; then
     return 0
   fi
-  if ! vendor_is_ok; then
-    echo "==> Cannot generate APP_KEY — vendor/ is incomplete"
-    return 1
-  fi
-  if ! grep -qE '^APP_KEY=' .env 2>/dev/null; then
-    set_env_key APP_KEY "" 1
-  fi
-  echo "==> Generating APP_KEY..."
-  php artisan key:generate --force || write_app_key_direct
-  if ! grep -qE '^APP_KEY=base64:' .env 2>/dev/null; then
-    echo "FATAL: APP_KEY was not written to .env"
-    return 1
-  fi
-  finalize_env_file .env
+  echo "FATAL: APP_KEY missing — add it to b2b-master-datamanagement/.env (run once: php artisan key:generate)"
+  return 1
 }
-
-if [ -n "${CRM_MASTER_API_TOKEN:-}" ]; then
-  set_env_key CRM_MASTER_API_TOKEN "${CRM_MASTER_API_TOKEN}" 1
-fi
 
 rm -f bootstrap/cache/packages.php bootstrap/cache/services.php bootstrap/cache/config.php 2>/dev/null || true
 
