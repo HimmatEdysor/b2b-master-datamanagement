@@ -1,6 +1,17 @@
 #!/bin/bash
 # Safe .env writer — passwords with | & $ % ! etc. must not go through sed unescaped.
 
+assert_no_merge_conflicts() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$file"; then
+    echo "FATAL: $file has unresolved git merge conflict markers (<<<<<<<)."
+    echo "Fix on server:"
+    echo "  cd /var/www/b2b-master-datamanagement && git fetch && git checkout HEAD -- docker/scripts/"
+    exit 1
+  fi
+}
+
 set_env_key() {
   local key="$1"
   local value="$2"

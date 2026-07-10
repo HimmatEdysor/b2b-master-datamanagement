@@ -1,10 +1,25 @@
 #!/bin/bash
 set -e
 
+assert_no_merge_conflicts() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if grep -qE '^(<<<<<<<|=======|>>>>>>>)' "$file"; then
+    echo "FATAL: $file has unresolved git merge conflict markers (<<<<<<<)."
+    echo "Fix: git checkout HEAD -- docker/scripts/"
+    exit 1
+  fi
+}
+
 cd /var/www/html
 
 # shellcheck source=env-file.sh
 source "$(dirname "$0")/env-file.sh"
+assert_no_merge_conflicts "$0"
+assert_no_merge_conflicts "$(dirname "$0")/env-file.sh"
+if [ -f /var/www/tenant-crm/docker/scripts/prepare-permissions.sh ]; then
+  assert_no_merge_conflicts /var/www/tenant-crm/docker/scripts/prepare-permissions.sh
+fi
 if [ -f /var/www/tenant-crm/docker/scripts/prepare-permissions.sh ]; then
   # shellcheck source=/dev/null
   source /var/www/tenant-crm/docker/scripts/prepare-permissions.sh
@@ -169,12 +184,15 @@ if [ -f artisan ]; then
     timeout 120 php artisan migrate --force || echo "Migrations failed or DB not ready yet"
   fi
 
-  php artisan storage:link 2>/dev/null || true
+  php artisan storage:link --force 2>/dev/null || php artisan storage:link 2>/dev/null || true
   php artisan config:clear 2>/dev/null || true
   php artisan route:clear 2>/dev/null || true
   php artisan view:clear 2>/dev/null || true
   rm -f bootstrap/cache/config.php 2>/dev/null || true
 fi
 
+if [ "$#" -eq 0 ]; then
+  set -- /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+fi
 echo "==> Starting: $*"
 exec "$@"
