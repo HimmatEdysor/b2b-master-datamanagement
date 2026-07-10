@@ -15,6 +15,8 @@ COPY docker/scripts/env-file.sh /usr/local/bin/env-file.sh
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/env-file.sh /usr/local/bin/entrypoint.sh
 
+# prepare-permissions.sh lives in B2B_CRM; master compose bind-mounts it at runtime.
+
 WORKDIR /var/www/html
 
 RUN mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache \
