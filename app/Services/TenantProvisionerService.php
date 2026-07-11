@@ -584,6 +584,7 @@ class TenantProvisionerService
 
         $resume = $this->canResumeAfterClone($tenant)
             || $tenant->status === 'provisioning'
+            || $tenant->status === 'failed'
             || ($tenant->status === 'active' && ! $tenant->isDatabaseProvisioned());
 
         $tenant->update([

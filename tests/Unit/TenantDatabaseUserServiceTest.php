@@ -57,6 +57,19 @@ class TenantDatabaseUserServiceTest extends TestCase
     }
 
     #[Test]
+    public function build_policy_compliant_password_always_includes_special_character(): void
+    {
+        $service = $this->app->make(TenantDatabaseUserService::class);
+        $method = new ReflectionMethod($service, 'buildPolicyCompliantPassword');
+        $method->setAccessible(true);
+
+        for ($i = 0; $i < 20; $i++) {
+            $password = $method->invoke($service);
+            $this->assertMatchesRegularExpression('/[^a-zA-Z0-9]/', $password, "Password missing special char: {$password}");
+        }
+    }
+
+    #[Test]
     public function generated_mysql_password_includes_required_character_classes(): void
     {
         $service = $this->app->make(TenantDatabaseUserService::class);

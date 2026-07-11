@@ -8,6 +8,9 @@ use Illuminate\Support\Str;
 
 class TenantDatabaseUserService
 {
+    /** Bump when password generation changes — grep on server to confirm deploy. */
+    public const MYSQL_PASSWORD_POLICY_BUILD = '2026-07-11-mysql-policy-v2';
+
     public function __construct(
         protected MasterActivityLogService $activityLog,
     ) {}
@@ -33,28 +36,43 @@ class TenantDatabaseUserService
         }
 
         $username = $this->deriveUsername($databaseName);
-        $password = $this->generateMysqlPassword();
+        $lastError = null;
 
-        $this->runAdminSql($this->buildProvisionSql($username, $password, $databaseName));
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $password = $this->generateMysqlPassword();
 
-        $tenant->update([
-            'database_username' => $username,
-            'database_password' => $password,
-        ]);
+            try {
+                $this->runAdminSql($this->buildProvisionSql($username, $password, $databaseName));
+            } catch (\RuntimeException $e) {
+                $lastError = $e;
+                if (! $this->isMysqlPasswordPolicyError($e) || $attempt >= 5) {
+                    throw $e;
+                }
 
-        $this->activityLog->database(
-            'provision_db_user',
-            'ok',
-            "Dedicated MySQL user created for database {$databaseName}",
-            $tenant,
-            null,
-            ['username' => $username, 'database' => $databaseName]
-        );
+                continue;
+            }
 
-        return [
-            'username' => $username,
-            'password' => $password,
-        ];
+            $tenant->update([
+                'database_username' => $username,
+                'database_password' => $password,
+            ]);
+
+            $this->activityLog->database(
+                'provision_db_user',
+                'ok',
+                "Dedicated MySQL user created for database {$databaseName}",
+                $tenant,
+                null,
+                ['username' => $username, 'database' => $databaseName]
+            );
+
+            return [
+                'username' => $username,
+                'password' => $password,
+            ];
+        }
+
+        throw $lastError ?? new \RuntimeException('Failed to create MySQL user for tenant database.');
     }
 
     /**
@@ -231,15 +249,16 @@ class TenantDatabaseUserService
 
     protected function generateMysqlPassword(): string
     {
-        for ($attempt = 0; $attempt < 10; $attempt++) {
-            $password = Str::password(24, letters: true, numbers: true, symbols: true);
-
-            if ($this->mysqlPasswordIsPolicyCompliant($password)) {
-                return $password;
-            }
-        }
-
         return $this->buildPolicyCompliantPassword();
+    }
+
+    protected function isMysqlPasswordPolicyError(\Throwable $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, '1819')
+            || stripos($message, 'password does not satisfy') !== false
+            || stripos($message, 'validate_password') !== false;
     }
 
     protected function mysqlPasswordIsPolicyCompliant(string $password): bool
@@ -256,7 +275,8 @@ class TenantDatabaseUserService
         $lower = 'abcdefghjkmnpqrstuvwxyz';
         $upper = 'ABCDEFGHJKMNPQRSTUVWXYZ';
         $digits = '23456789';
-        $symbols = '!@#$%^&*+-=?';
+        // MySQL validate_password "special" set on Ubuntu — avoid quotes/backslashes in SQL literals.
+        $symbols = '!@#$%&*+-=?';
         $all = $lower.$upper.$digits.$symbols;
 
         $password = $lower[random_int(0, strlen($lower) - 1)]
@@ -268,7 +288,13 @@ class TenantDatabaseUserService
             $password .= $all[random_int(0, strlen($all) - 1)];
         }
 
-        return str_shuffle($password);
+        $shuffled = str_shuffle($password);
+
+        if (! $this->mysqlPasswordIsPolicyCompliant($shuffled)) {
+            return $lower[0].$upper[0].$digits[0].'!'.str_repeat($all[random_int(0, strlen($all) - 1)], max(0, $length - 4));
+        }
+
+        return $shuffled;
     }
 
     protected function escapeSqlString(string $value): string
