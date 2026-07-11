@@ -33,7 +33,7 @@ class TenantDatabaseUserService
         }
 
         $username = $this->deriveUsername($databaseName);
-        $password = Str::password(24, letters: true, numbers: true, symbols: false);
+        $password = $this->generateMysqlPassword();
 
         $this->runAdminSql($this->buildProvisionSql($username, $password, $databaseName));
 
@@ -227,6 +227,48 @@ class TenantDatabaseUserService
                 throw new \RuntimeException("MySQL failed on:\n{$sql}\n\n".$e->getMessage(), 0, $e);
             }
         }
+    }
+
+    protected function generateMysqlPassword(): string
+    {
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $password = Str::password(24, letters: true, numbers: true, symbols: true);
+
+            if ($this->mysqlPasswordIsPolicyCompliant($password)) {
+                return $password;
+            }
+        }
+
+        return $this->buildPolicyCompliantPassword();
+    }
+
+    protected function mysqlPasswordIsPolicyCompliant(string $password): bool
+    {
+        return strlen($password) >= 8
+            && preg_match('/[a-z]/', $password)
+            && preg_match('/[A-Z]/', $password)
+            && preg_match('/\d/', $password)
+            && preg_match('/[^a-zA-Z0-9]/', $password);
+    }
+
+    protected function buildPolicyCompliantPassword(int $length = 24): string
+    {
+        $lower = 'abcdefghjkmnpqrstuvwxyz';
+        $upper = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+        $digits = '23456789';
+        $symbols = '!@#$%^&*+-=?';
+        $all = $lower.$upper.$digits.$symbols;
+
+        $password = $lower[random_int(0, strlen($lower) - 1)]
+            .$upper[random_int(0, strlen($upper) - 1)]
+            .$digits[random_int(0, strlen($digits) - 1)]
+            .$symbols[random_int(0, strlen($symbols) - 1)];
+
+        for ($i = strlen($password); $i < $length; $i++) {
+            $password .= $all[random_int(0, strlen($all) - 1)];
+        }
+
+        return str_shuffle($password);
     }
 
     protected function escapeSqlString(string $value): string

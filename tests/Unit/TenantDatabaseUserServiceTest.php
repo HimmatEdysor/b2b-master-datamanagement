@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Services\TenantDatabaseUserService;
 use App\Support\TenantDbAdmin;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class TenantDatabaseUserServiceTest extends TestCase
@@ -53,6 +54,22 @@ class TenantDatabaseUserServiceTest extends TestCase
 
         config(['master.tenant_db_shared_credentials' => false]);
         $this->assertFalse(TenantDbAdmin::usesSharedTenantCredentials());
+    }
+
+    #[Test]
+    public function generated_mysql_password_includes_required_character_classes(): void
+    {
+        $service = $this->app->make(TenantDatabaseUserService::class);
+        $method = new ReflectionMethod($service, 'generateMysqlPassword');
+        $method->setAccessible(true);
+
+        $password = $method->invoke($service);
+
+        $this->assertGreaterThanOrEqual(8, strlen($password));
+        $this->assertMatchesRegularExpression('/[a-z]/', $password);
+        $this->assertMatchesRegularExpression('/[A-Z]/', $password);
+        $this->assertMatchesRegularExpression('/\d/', $password);
+        $this->assertMatchesRegularExpression('/[^a-zA-Z0-9]/', $password);
     }
 
     #[Test]
