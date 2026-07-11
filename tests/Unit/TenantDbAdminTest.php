@@ -90,11 +90,17 @@ class TenantDbAdminTest extends TestCase
     }
 
     #[Test]
-    public function normalize_mysqldump_error_maps_flush_tables_to_rds_hint(): void
+    public function dsn_uses_unix_socket_when_configured(): void
     {
-        $msg = TenantDbAdmin::normalizeMysqldumpError("FLUSH TABLES Access denied 1227");
+        config([
+            'master.tenant_db_host' => '127.0.0.1',
+            'master.tenant_db_port' => 3306,
+            'master.tenant_db_socket' => '/var/run/mysqld/mysqld.sock',
+        ]);
 
-        $this->assertStringContainsString('--skip-lock-tables', $msg);
-        $this->assertStringContainsString('horizon:terminate', $msg);
+        $this->assertSame(
+            'mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4',
+            TenantDbAdmin::dsn()
+        );
     }
 }

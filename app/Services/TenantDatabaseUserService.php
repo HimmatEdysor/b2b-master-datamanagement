@@ -216,9 +216,7 @@ class TenantDatabaseUserService
      */
     protected function runAdminSql(array $statements): void
     {
-        TenantDbAdmin::assertCanProvision();
-
-        $pdo = $this->adminPdo();
+        $pdo = TenantDbAdmin::adminPdo();
 
         foreach ($statements as $sql) {
             $sql = rtrim(trim($sql), ';').';';
@@ -229,25 +227,6 @@ class TenantDatabaseUserService
                 throw new \RuntimeException("MySQL failed on:\n{$sql}\n\n".$e->getMessage(), 0, $e);
             }
         }
-    }
-
-    protected function adminPdo(): \PDO
-    {
-        $dsn = sprintf(
-            'mysql:host=%s;port=%d;charset=utf8mb4',
-            TenantDbAdmin::host(),
-            TenantDbAdmin::port()
-        );
-
-        return new \PDO(
-            $dsn,
-            TenantDbAdmin::username(),
-            TenantDbAdmin::password(),
-            [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
-            ]
-        );
     }
 
     protected function escapeSqlString(string $value): string
