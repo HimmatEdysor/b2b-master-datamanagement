@@ -92,7 +92,7 @@ clear_mount_dir() {
     rm -rf "${dir:?}"/* "${dir:?}"/.[!.]* 2>/dev/null || true
 }
 
-# Docker: 127.0.0.1 / localhost in .env means host MySQL — remapped inside containers.
+# Docker: DB_HOST=127.0.0.1 reaches Ubuntu host MySQL (bind-mount DB_SOCKET in compose for local mode).
 is_loopback_db_host() {
   case "$1" in
     127.0.0.1|localhost|::1) return 0 ;;
@@ -112,12 +112,8 @@ docker_db_host() {
       return
       ;;
   esac
-  if [ -f /.dockerenv ]; then
-    if [ -n "${HOST_DB_HOST:-}" ] && is_loopback_db_host "$host"; then
-      host="$HOST_DB_HOST"
-    elif is_loopback_db_host "$host"; then
-      host="host.docker.internal"
-    fi
+  if [ -f /.dockerenv ] && [ -n "${HOST_DB_HOST:-}" ] && is_loopback_db_host "$host"; then
+    host="$HOST_DB_HOST"
   fi
   printf '%s' "$host"
 }
@@ -134,7 +130,12 @@ mysql_ping_silent() {
   local user="${2:-${DB_USERNAME:-admin}}"
   local port="${3:-${DB_PORT:-3306}}"
   local pass="${4:-${DB_PASSWORD:-}}"
-  local ping=(mysqladmin ping -h"$host" -P"$port" -u"$user")
+  local ping=()
+  if [ -n "${DB_SOCKET:-}" ] && [ -S "$DB_SOCKET" ]; then
+    ping=(mysqladmin ping -S"$DB_SOCKET" -u"$user")
+  else
+    ping=(mysqladmin ping -h"$host" -P"$port" -u"$user")
+  fi
   if [ -n "$pass" ]; then
     ping+=(-p"$pass")
   fi

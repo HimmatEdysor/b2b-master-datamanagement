@@ -48,7 +48,7 @@ if [ "${SKIP_DB_WAIT:-0}" != "1" ]; then
     if [ "$ATTEMPTS" -ge 30 ]; then
       echo "WARNING: MySQL not reachable at ${MYSQL_WAIT_HOST}:${DB_PORT:-3306}"
       echo "  Ensure Ubuntu MySQL is running and admin@'%' is granted"
-      echo "  Docker local mode uses host.docker.internal (not 127.0.0.1)"
+      echo "  Docker local mode uses DB_HOST=127.0.0.1 (mount host mysqld.sock or set HOST_DB_HOST)"
       break
     fi
     sleep 1
