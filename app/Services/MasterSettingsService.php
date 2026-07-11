@@ -60,6 +60,10 @@ class MasterSettingsService
                     continue;
                 }
 
+                if ($this->shouldSkipLocalOnlySettingInProduction($key, $raw)) {
+                    continue;
+                }
+
                 $field = $this->fieldDefinition($key);
                 if ($field === null || $raw === null || $raw === '') {
                     continue;
@@ -164,6 +168,22 @@ class MasterSettingsService
         $host = parse_url((string) config('app.url'), PHP_URL_HOST);
 
         return in_array($host, ['localhost', '127.0.0.1'], true);
+    }
+
+    /**
+     * Web settings saved on a local machine must not override production tenant URLs.
+     */
+    protected function shouldSkipLocalOnlySettingInProduction(string $key, ?string $raw): bool
+    {
+        if (env('APP_ENV') !== 'production' || $raw === null || $raw === '') {
+            return false;
+        }
+
+        return match ($key) {
+            'tenant_base_domain' => in_array(strtolower(trim($raw)), ['localhost', '127.0.0.1'], true),
+            'tenant_url_scheme' => strtolower(trim($raw)) === 'http',
+            default => false,
+        };
     }
 
     /**
