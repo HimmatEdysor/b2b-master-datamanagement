@@ -10,6 +10,9 @@ use PDO;
  */
 class TenantDatabaseSchemaCloneService
 {
+    /** Bump when clone logic changes — grep on server to confirm deploy. */
+    public const SCHEMA_CLONE_IMPL = 'create-table-like-v2';
+
     public function adminPdo(): PDO
     {
         return TenantDbAdmin::adminPdo();
@@ -118,7 +121,7 @@ class TenantDatabaseSchemaCloneService
             return [
                 'tables' => $tableCount,
                 'views' => $viewCount,
-                'method' => 'pdo',
+                'method' => self::SCHEMA_CLONE_IMPL,
             ];
         } finally {
             $this->endCloneSession($pdo, $sqlMode);
