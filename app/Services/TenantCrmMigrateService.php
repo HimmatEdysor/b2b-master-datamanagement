@@ -159,7 +159,24 @@ class TenantCrmMigrateService
         }
 
         $php = config('master.tenant_crm_php_binary');
-        $phpBinary = (is_string($php) && $php !== '') ? $php : PHP_BINARY;
+        if (is_string($php) && $php !== '') {
+            $phpBinary = $php;
+        } else {
+            $phpBinary = PHP_BINARY;
+            if (str_contains($phpBinary, 'php-fpm')) {
+                $candidate = str_replace('php-fpm', 'php', $phpBinary);
+                if (is_executable($candidate)) {
+                    $phpBinary = $candidate;
+                } else {
+                    $candidate2 = str_replace(['/sbin/php-fpm', '/sbin/php'], ['/bin/php', '/bin/php'], $phpBinary);
+                    if (is_executable($candidate2)) {
+                        $phpBinary = $candidate2;
+                    } else {
+                        $phpBinary = 'php';
+                    }
+                }
+            }
+        }
 
         $connection = $this->resolveMigrateConnection($tenant);
         if ($connection === null) {
