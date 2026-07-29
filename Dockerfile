@@ -1,5 +1,6 @@
 # B2B CRM Master Portal — extends shared PHP base (no PECL compile at app build time).
-# PHP_BASE_IMAGE is built by the php-base compose service (or compose.sh ensure_php_base).
+# Master portal — extends shared PHP base (same tag as B2B CRM).
+# Compose: additional_contexts maps ARG php_base → service:php-base (no Docker Hub pull).
 ARG PHP_BASE_IMAGE=b2b-php-base:8.3-bookworm
 FROM ${PHP_BASE_IMAGE}
 
