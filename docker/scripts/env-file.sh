@@ -185,42 +185,90 @@ composer_lock_needs_php84() {
   grep -A3 '"name": "symfony/clock"' composer.lock | grep -qE '"version": "v8\.' 2>/dev/null
 }
 
+composer_vendor_ok() {
+  [ -f vendor/autoload.php ] || return 1
+  php -r "require 'vendor/autoload.php'; exit(class_exists('Illuminate\\\\Foundation\\\\Application') ? 0 : 1);" 2>/dev/null
+}
+
+composer_reset_vendor_dir() {
+  echo "==> Resetting vendor/ (corrupt or raced install)"
+  clear_mount_dir vendor
+  mkdir -p vendor/composer
+  find /tmp/composer-cache -mindepth 1 -delete 2>/dev/null || rm -rf /tmp/composer-cache 2>/dev/null || true
+  mkdir -p /tmp/composer-cache
+  composer clear-cache 2>/dev/null || true
+}
+
+# Exclusive lock so master + queue + scheduler never race on master_vendor.
 composer_install_app() {
   local production="${1:-0}"
-  prepare_composer_env
-  local php_ver
-  php_ver="$(php -r 'echo PHP_VERSION;')"
-  composer config platform.php "$php_ver" 2>/dev/null || true
-  composer config --global process-timeout 0 2>/dev/null || true
-  composer config --global cache-dir /tmp/composer-cache 2>/dev/null || true
+  local lock_dir="${COMPOSER_VENDOR_LOCK_DIR:-/var/www/html/storage/framework}"
+  local lock_file="${lock_dir}/composer-vendor.lock"
+  mkdir -p "$lock_dir" vendor/composer /tmp/composer-cache 2>/dev/null || true
 
-  if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
-    restore_composer_lock_from_git || true
-  fi
+  echo "==> Waiting for exclusive composer lock (${lock_file})..."
+  (
+    flock 200
+    echo "==> Acquired composer vendor lock"
 
-  if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
-    echo "FATAL: composer.lock requires Symfony 8.1 / PHP 8.4+ but container runs PHP ${php_ver}"
-    echo "On the server (as ubuntu), run:"
-    echo "  cd /var/www/B2B_CRM && ./docker/scripts/fix-master-composer-lock.sh"
-    echo "Or manually:"
-    echo "  cd /var/www/b2b-master-datamanagement && git fetch origin && git checkout origin/main -- composer.lock composer.json"
-    exit 1
-  fi
-
-  local args=(install --prefer-dist --no-interaction --no-progress)
-  if [ "$production" = "1" ]; then
-    args+=(--no-dev --optimize-autoloader)
-  fi
-
-  local attempt
-  for attempt in 1 2 3; do
-    echo "==> composer install attempt ${attempt}/3 (parallel downloads disabled)..."
-    if composer "${args[@]}"; then
-      return 0
+    if [ "${FORCE_COMPOSER:-0}" != "1" ] && composer_vendor_ok; then
+      echo "==> vendor/ already healthy after lock wait — skipping composer"
+      exit 0
     fi
-    echo "==> composer install failed on attempt ${attempt}"
-    find vendor/composer -maxdepth 1 -name 'tmp-*' -delete 2>/dev/null || true
-    composer clear-cache 2>/dev/null || true
-  done
-  return 1
+
+    prepare_composer_env
+    local php_ver
+    php_ver="$(php -r 'echo PHP_VERSION;')"
+    composer config platform.php "$php_ver" 2>/dev/null || true
+    composer config --global process-timeout 0 2>/dev/null || true
+    composer config --global cache-dir /tmp/composer-cache 2>/dev/null || true
+    composer config --global discard-changes true 2>/dev/null || true
+
+    if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
+      restore_composer_lock_from_git || true
+    fi
+
+    if composer_lock_needs_php84 && php -r 'exit(version_compare(PHP_VERSION, "8.4.1", "<") ? 0 : 1);'; then
+      echo "FATAL: composer.lock requires Symfony 8.1 / PHP 8.4+ but container runs PHP ${php_ver}"
+      echo "On the server (as ubuntu), run:"
+      echo "  cd /var/www/B2B_CRM && ./docker/scripts/fix-master-composer-lock.sh"
+      exit 1
+    fi
+
+    if [ -d vendor ] && ! composer_vendor_ok; then
+      composer_reset_vendor_dir
+    fi
+
+    local attempt
+    for attempt in 1 2 3 4 5; do
+      local args=(install --no-interaction --no-progress)
+      if [ "$production" = "1" ]; then
+        args+=(--no-dev --optimize-autoloader)
+      fi
+      if [ "$attempt" -ge 4 ]; then
+        args+=(--prefer-source)
+        echo "==> composer install attempt ${attempt}/5 (locked, prefer-source)..."
+      else
+        args+=(--prefer-install=auto)
+        echo "==> composer install attempt ${attempt}/5 (locked, serial downloads)..."
+      fi
+
+      mkdir -p vendor/composer /tmp/composer-cache
+      if composer "${args[@]}"; then
+        if composer_vendor_ok; then
+          exit 0
+        fi
+        echo "==> composer reported success but Laravel framework is missing — retrying"
+      fi
+      echo "==> composer install failed on attempt ${attempt}"
+      find vendor/composer -maxdepth 1 -name 'tmp-*' -delete 2>/dev/null || true
+      if [ "$attempt" -ge 2 ]; then
+        composer_reset_vendor_dir
+      else
+        composer clear-cache 2>/dev/null || true
+      fi
+      sleep $((attempt * 3))
+    done
+    exit 1
+  ) 200>"$lock_file"
 }

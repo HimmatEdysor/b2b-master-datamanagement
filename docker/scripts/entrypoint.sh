@@ -61,8 +61,13 @@ else
 fi
 
 vendor_is_ok() {
+  # Require a real framework class — autoload.php alone can exist mid-install.
+  if type composer_vendor_ok >/dev/null 2>&1; then
+    composer_vendor_ok
+    return $?
+  fi
   [ -f vendor/autoload.php ] || return 1
-  php -r "require 'vendor/autoload.php';" 2>/dev/null
+  php -r "require 'vendor/autoload.php'; exit(class_exists('Illuminate\\\\Foundation\\\\Application') ? 0 : 1);" 2>/dev/null
 }
 
 ensure_app_key() {
@@ -106,11 +111,9 @@ elif [ "${APP_ENV:-production}" = "production" ] && [ -d vendor/nunomaduro/colli
 fi
 
 if [ "$NEED_COMPOSER" = "1" ] && [ -f composer.json ]; then
-  if [ -d vendor ] && ! vendor_is_ok; then
-    echo "==> Clearing incomplete vendor/ volume (stale or interrupted install)"
-    clear_mount_dir vendor
-  fi
-  echo "==> Installing PHP dependencies (composer)..."
+  # Clear + install happen under flock inside composer_install_app so
+  # master / master-queue / master-scheduler never corrupt shared vendor/.
+  echo "==> Installing PHP dependencies (composer, exclusive lock)..."
   if [ "${APP_ENV:-production}" = "production" ]; then
     composer_install_app 1
   else
