@@ -147,6 +147,10 @@ prepare_composer_env() {
   export COMPOSER_MEMORY_LIMIT="${COMPOSER_MEMORY_LIMIT:--1}"
   export COMPOSER_MAX_PARALLEL_HTTP=1
   export COMPOSER_PROCESS_TIMEOUT=0
+  # Keep Composer home/cache off the shared vendor volume (avoids races + ENOENT).
+  export COMPOSER_HOME="${COMPOSER_HOME:-/tmp/composer-home}"
+  export COMPOSER_CACHE_DIR="${COMPOSER_CACHE_DIR:-/tmp/composer-cache}"
+  mkdir -p "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR" vendor/composer 2>/dev/null || true
   export GIT_CONFIG_GLOBAL="${GIT_CONFIG_GLOBAL:-/tmp/composer-gitconfig}"
   git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory '*' 2>/dev/null || true
   git config --file "$GIT_CONFIG_GLOBAL" --add safe.directory "$(pwd)" 2>/dev/null || true

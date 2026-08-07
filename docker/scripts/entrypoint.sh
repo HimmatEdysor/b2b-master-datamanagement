@@ -103,16 +103,21 @@ if [ "${FAST_START:-0}" = "1" ] && vendor_is_ok; then
   exec "$@"
 fi
 
-NEED_COMPOSER=0
-if [ "${FORCE_COMPOSER:-0}" = "1" ] || ! vendor_is_ok; then
-  NEED_COMPOSER=1
-elif [ "${APP_ENV:-production}" = "production" ] && [ -d vendor/nunomaduro/collision ]; then
-  NEED_COMPOSER=1
-fi
-
-if [ "$NEED_COMPOSER" = "1" ] && [ -f composer.json ]; then
-  # Clear + install happen under flock inside composer_install_app so
-  # master / master-queue / master-scheduler never corrupt shared vendor/.
+# Workers must NEVER composer-install or wipe vendor/ — that races the web container
+# (ENOENT on vendor/composer/tmp-*.zip, missing polyfill stubs, 0-byte zips).
+if [ "${SKIP_COMPOSER:-0}" = "1" ]; then
+  echo "==> SKIP_COMPOSER=1 — waiting for shared vendor/ from master web container..."
+  WAITED=0
+  until vendor_is_ok; do
+    WAITED=$((WAITED + 1))
+    if [ "$WAITED" -ge 180 ]; then
+      echo "FATAL: vendor/ not ready after 15m — fix master web first (./deploy fix-vendor)"
+      exit 1
+    fi
+    sleep 5
+  done
+  echo "==> Shared vendor/ ready"
+elif [ "${FORCE_COMPOSER:-0}" = "1" ] || ! vendor_is_ok || { [ "${APP_ENV:-production}" = "production" ] && [ -d vendor/nunomaduro/collision ]; }; then
   echo "==> Installing PHP dependencies (composer, exclusive lock)..."
   if [ "${APP_ENV:-production}" = "production" ]; then
     composer_install_app 1
