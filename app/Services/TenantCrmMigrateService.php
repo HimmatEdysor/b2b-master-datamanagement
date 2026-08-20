@@ -267,6 +267,9 @@ class TenantCrmMigrateService
      * Symfony Process no longer supports inheritEnvironmentVariables(); pass a full env map
      * so the child PHP/artisan process keeps PATH, HOME, etc., while DB_* is overridden per tenant.
      *
+     * Master portal Redis settings must not leak: this host uses REDIS_CLIENT=predis, but the
+     * tenant CRM may not have predis/predis installed (Predis\Client not found on migrate).
+     *
      * @param  array<string, string>  $overrides
      * @return array<string, string>
      */
@@ -280,9 +283,24 @@ class TenantCrmMigrateService
             $env[$key] = (string) $value;
         }
 
-        foreach ($overrides as $key => $value) {
-            $env[(string) $key] = (string) $value;
+        foreach ([
+            'REDIS_CLIENT',
+            'CACHE_STORE',
+            'CACHE_DRIVER',
+            'QUEUE_CONNECTION',
+            'SESSION_DRIVER',
+            'BROADCAST_CONNECTION',
+        ] as $key) {
+            unset($env[$key]);
         }
+
+        $env = array_merge($env, [
+            'CACHE_STORE' => 'array',
+            'CACHE_DRIVER' => 'array',
+            'SESSION_DRIVER' => 'array',
+            'QUEUE_CONNECTION' => 'sync',
+            'BROADCAST_CONNECTION' => 'null',
+        ], $overrides);
 
         return $env;
     }
