@@ -11,7 +11,7 @@ use PDO;
 class TenantDatabaseSchemaCloneService
 {
     /** Bump when clone logic changes — grep on server to confirm deploy. */
-    public const SCHEMA_CLONE_IMPL = 'create-table-like-v2';
+    public const SCHEMA_CLONE_IMPL = 'create-table-like-v3-auto-increment';
 
     public function adminPdo(): PDO
     {
@@ -105,6 +105,7 @@ class TenantDatabaseSchemaCloneService
                 }
             }
 
+            $this->copyAutoIncrementColumns($pdo, $fromDatabase, $toDatabase);
             $this->copyForeignKeys($pdo, $fromDatabase, $toDatabase);
 
             $viewCount = 0;
@@ -202,6 +203,46 @@ class TenantDatabaseSchemaCloneService
                 0,
                 $e
             );
+        }
+    }
+
+    /**
+     * CREATE TABLE ... LIKE can drop AUTO_INCREMENT on some MySQL 8 hosts.
+     * Re-apply it from the template so jobs like CreateNotificationJob can INSERT without id.
+     */
+    protected function copyAutoIncrementColumns(PDO $pdo, string $fromDatabase, string $toDatabase): void
+    {
+        $stmt = $pdo->prepare(
+            'SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = ?
+               AND EXTRA LIKE ?
+             ORDER BY TABLE_NAME, ORDINAL_POSITION'
+        );
+        $stmt->execute([$fromDatabase, '%auto_increment%']);
+
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $table = (string) ($row['TABLE_NAME'] ?? '');
+            $column = (string) ($row['COLUMN_NAME'] ?? '');
+            $columnType = (string) ($row['COLUMN_TYPE'] ?? '');
+            if ($table === '' || $column === '' || $columnType === '') {
+                continue;
+            }
+
+            $destTable = TenantDbAdmin::quoteIdentifier($toDatabase).'.'.TenantDbAdmin::quoteIdentifier($table);
+            $destColumn = TenantDbAdmin::quoteIdentifier($column);
+
+            $check = $pdo->prepare(
+                'SELECT EXTRA FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+            );
+            $check->execute([$toDatabase, $table, $column]);
+            $extra = strtolower((string) $check->fetchColumn());
+            if (str_contains($extra, 'auto_increment')) {
+                continue;
+            }
+
+            $pdo->exec("ALTER TABLE {$destTable} MODIFY {$destColumn} {$columnType} NOT NULL AUTO_INCREMENT");
         }
     }
 
