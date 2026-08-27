@@ -134,8 +134,7 @@ class DatabaseSeeder extends Seeder
 
         foreach (
             [
-                ['host' => 'guaranteeadmit.com', 'type' => 'primary', 'is_primary' => true],
-                ['host' => 'www.guaranteeadmit.com', 'type' => 'custom', 'is_primary' => false],
+                ['host' => 'main.guaranteeadmit.com', 'type' => 'primary', 'is_primary' => true],
             ] as $domain
         ) {
             TenantDomain::query()->updateOrCreate(

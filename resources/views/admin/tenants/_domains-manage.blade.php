@@ -25,7 +25,8 @@
     <p class="form-hint domain-platform-note">
         <strong>Default platform CRM:</strong>
         <a href="{{ $defaultPlatformUrl }}" target="_blank" rel="noopener">{{ $defaultPlatformUrl }}</a>
-        — apex domain for Guarantee Admit. Partner companies use <code>{slug}.{{ $baseDomain }}</code>.
+        — Laravel apex for Guarantee Admit. Partner companies use <code>{slug}.{{ $baseDomain }}</code>
+        (Next portal: <code>{slug}.guaranteeadmit.com</code>).
     </p>
 @endif
 

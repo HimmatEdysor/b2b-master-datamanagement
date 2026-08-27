@@ -7,13 +7,14 @@ return [
     'is_local' => env('APP_ENV', 'production') === 'local',
 
     'tenant_base_domain' => env('TENANT_BASE_DOMAIN') ?: (
-        env('APP_ENV') === 'local' ? 'localhost' : 'guaranteeadmit.com'
+        env('APP_ENV') === 'local' ? 'localhost' : 'main.guaranteeadmit.com'
     ),
 
-    'tenant_base_domain_production' => env('TENANT_BASE_DOMAIN_PRODUCTION', 'guaranteeadmit.com'),
+    'tenant_base_domain_production' => env('TENANT_BASE_DOMAIN_PRODUCTION', 'main.guaranteeadmit.com'),
 
     /*
-    | Slug for the default platform tenant (apex guaranteeadmit.com CRM).
+    | Slug for the default platform tenant (Laravel apex main.guaranteeadmit.com).
+    | Next.js portal apex remains guaranteeadmit.com / {slug}.guaranteeadmit.com.
     */
     'platform_default_slug' => env('PLATFORM_DEFAULT_TENANT_SLUG', 'guaranteeadmit'),
 

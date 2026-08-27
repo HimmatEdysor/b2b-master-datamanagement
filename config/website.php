@@ -17,7 +17,7 @@ return [
             'summary' => 'Your own branded B2B CRM portal — separate from other partners, fully under your company name.',
             'points' => [
                 'Isolated tenant with own login and data',
-                'Subdomain on your company slug (e.g. yourcompany.guaranteeadmit.com)',
+                'Subdomain on your company slug (e.g. yourcompany.guaranteeadmit.com portal / yourcompany.main.guaranteeadmit.com API)',
                 'Optional custom domain (white-label)',
             ],
         ],
