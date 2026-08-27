@@ -149,6 +149,16 @@ class TenantCrmMigrateService
             ];
         }
 
+        $autoload = $crmPath.DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php';
+        if (! is_file($autoload)) {
+            return [
+                'ok' => false,
+                'message' => 'Tenant CRM vendor/autoload.php is missing. In Docker, mount laravel_vendor at /var/www/tenant-crm/vendor (or run: ./deploy fix-vendor).',
+                'output' => '',
+                'persisted' => false,
+            ];
+        }
+
         if ($tenant->database_name === null || $tenant->database_name === '') {
             return [
                 'ok' => false,
