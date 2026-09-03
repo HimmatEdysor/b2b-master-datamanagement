@@ -230,7 +230,7 @@ class TenantDomainDnsService
                 $domain,
                 $tenant,
                 'Marked linked for local dev only ('.$domain->host.' → '.$ip.'). No record was added in Cloudflare — for live DNS use '
-                .$tenant->slug.'.'.config('master.tenant_base_domain_production', 'guaranteeadmit.com').' on production master with a public server IP.',
+                .$this->productionHostForTenant($tenant).' on production master with a public server IP.',
                 'dns_update',
                 'local'
             );
@@ -363,7 +363,8 @@ class TenantDomainDnsService
     protected function hostIsProductionZone(string $host): bool
     {
         $zone = TenantDomainHost::normalize(
-            (string) config('master.dns_cloudflare_base_domain', config('master.tenant_base_domain_production', 'guaranteeadmit.com'))
+            (string) config('master.dns_cloudflare_base_domain')
+            ?: TenantDomainHost::registrableDomainFromCrmBase()
         );
         $host = TenantDomainHost::normalize($host);
 
@@ -432,6 +433,19 @@ class TenantDomainDnsService
         $suffix = '.'.$base;
 
         return $host !== $base && str_ends_with($host, $suffix);
+    }
+
+    protected function productionHostForTenant(Tenant $tenant): string
+    {
+        $prodBase = TenantDomainHost::normalize(
+            (string) config('master.tenant_base_domain_production', 'main.guaranteeadmit.com')
+        );
+
+        if (TenantUrl::isPlatformDefaultSlug($tenant->slug)) {
+            return $prodBase;
+        }
+
+        return $tenant->slug.'.'.$prodBase;
     }
 
     protected function upsertDnsARecord(string $host, string $ip): bool
@@ -523,7 +537,8 @@ class TenantDomainDnsService
         }
 
         $zoneBase = TenantDomainHost::normalize(
-            (string) config('master.dns_route53_base_domain', config('master.tenant_base_domain_production', 'guaranteeadmit.com'))
+            (string) config('master.dns_route53_base_domain')
+            ?: TenantDomainHost::registrableDomainFromCrmBase()
         );
 
         $recordName = $this->recordFqdnInZone($host, $zoneBase);

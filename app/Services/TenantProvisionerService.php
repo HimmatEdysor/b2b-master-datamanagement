@@ -8,10 +8,11 @@ use App\Models\TenantDomain;
 use App\Models\TenantOperationLog;
 use App\Models\User;
 use App\Support\TenantDbAdmin;
+use App\Support\TenantDomainHost;
 use App\Support\TenantUrl;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Str;
 
 class TenantProvisionerService
 {
@@ -113,7 +114,7 @@ class TenantProvisionerService
             try {
                 $this->defaultUserService->provisionDefaultAdmin($tenant->fresh());
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Could not create default CRM admin after schema sync', [
+                Log::warning('Could not create default CRM admin after schema sync', [
                     'tenant_id' => $tenant->id,
                     'error' => $e->getMessage(),
                 ]);
@@ -739,6 +740,8 @@ class TenantProvisionerService
     public function ensureDomains(Tenant $tenant): void
     {
         $subdomain = TenantUrl::subdomainHost($tenant->slug);
+        $isApex = TenantDomainHost::isBaseDomainHost($subdomain);
+        $type = $isApex ? 'primary' : 'subdomain';
 
         $atHost = TenantDomain::query()
             ->where('tenant_id', $tenant->id)
@@ -747,20 +750,20 @@ class TenantProvisionerService
 
         if ($atHost) {
             $atHost->update([
-                'type' => 'subdomain',
+                'type' => $type,
                 'is_primary' => true,
             ]);
-            $this->activityLog->domain('ensure_subdomain', 'ok', "Primary subdomain set to {$subdomain}", $tenant);
+            $this->activityLog->domain('ensure_subdomain', 'ok', "Primary host set to {$subdomain}", $tenant);
         } elseif (TenantDomain::query()->where('host', $subdomain)->exists()) {
             return;
         } else {
             TenantDomain::query()->create([
                 'tenant_id' => $tenant->id,
                 'host' => $subdomain,
-                'type' => 'subdomain',
+                'type' => $type,
                 'is_primary' => true,
             ]);
-            $this->activityLog->domain('ensure_subdomain', 'ok', "Created primary subdomain {$subdomain}", $tenant);
+            $this->activityLog->domain('ensure_subdomain', 'ok', "Created primary host {$subdomain}", $tenant);
         }
 
         app(TenantDomainDnsService::class)->provisionAllForTenant($tenant->fresh(['domains']));

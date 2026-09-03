@@ -8,12 +8,27 @@ use Tests\TestCase;
 
 class TenantUrlTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'master.is_local' => true,
+            'master.tenant_base_domain' => 'localhost',
+            'master.tenant_base_domain_production' => 'main.guaranteeadmit.com',
+            'master.platform_default_slug' => 'guaranteeadmit',
+            'master.tenant_url_scheme' => 'http',
+            'master.tenant_crm_port' => '8000',
+            'master.tenant_crm_port_force' => false,
+        ]);
+    }
+
     protected function tearDown(): void
     {
         config([
             'master.is_local' => true,
             'master.tenant_base_domain' => 'localhost',
-            'master.tenant_base_domain_production' => 'guaranteeadmit.com',
+            'master.tenant_base_domain_production' => 'main.guaranteeadmit.com',
             'master.tenant_url_scheme' => 'http',
             'master.tenant_crm_port' => '8000',
             'master.tenant_crm_port_force' => false,
@@ -28,6 +43,9 @@ class TenantUrlTest extends TestCase
         config([
             'master.is_local' => true,
             'master.tenant_base_domain' => 'localhost',
+            'master.tenant_url_scheme' => 'http',
+            'master.tenant_crm_port' => '8000',
+            'master.tenant_crm_port_force' => false,
         ]);
 
         $this->assertSame(
@@ -41,15 +59,37 @@ class TenantUrlTest extends TestCase
     {
         config([
             'master.is_local' => false,
-            'master.tenant_base_domain' => 'guaranteeadmit.com',
+            'master.tenant_base_domain' => 'main.guaranteeadmit.com',
             'master.tenant_url_scheme' => 'https',
             'master.tenant_crm_port' => '8000',
         ]);
 
         $this->assertSame('', TenantUrl::portSuffix());
         $this->assertSame(
-            'https://acme.guaranteeadmit.com',
+            'https://acme.main.guaranteeadmit.com',
             TenantUrl::urlForSlug('acme')
+        );
+    }
+
+    #[Test]
+    public function platform_default_slug_uses_crm_apex_not_nested_subdomain(): void
+    {
+        config([
+            'master.is_local' => false,
+            'master.tenant_base_domain' => 'main.guaranteeadmit.com',
+            'master.tenant_base_domain_production' => 'main.guaranteeadmit.com',
+            'master.platform_default_slug' => 'guaranteeadmit',
+            'master.tenant_url_scheme' => 'https',
+        ]);
+
+        $this->assertSame('main.guaranteeadmit.com', TenantUrl::subdomainHost('guaranteeadmit'));
+        $this->assertSame('newcompany.main.guaranteeadmit.com', TenantUrl::subdomainHost('newcompany'));
+        $this->assertTrue(TenantUrl::isApexHost('main.guaranteeadmit.com'));
+        $this->assertTrue(TenantUrl::isApexHost('www.main.guaranteeadmit.com'));
+        $this->assertFalse(TenantUrl::isApexHost('newcompany.main.guaranteeadmit.com'));
+        $this->assertSame(
+            'https://main.guaranteeadmit.com',
+            TenantUrl::urlForSlug('guaranteeadmit')
         );
     }
 
@@ -58,14 +98,15 @@ class TenantUrlTest extends TestCase
     {
         config([
             'master.is_local' => true,
-            'master.tenant_base_domain' => 'guaranteeadmit.com',
+            'master.tenant_base_domain' => 'main.guaranteeadmit.com',
+            'master.tenant_base_domain_production' => 'main.guaranteeadmit.com',
             'master.tenant_url_scheme' => 'http',
             'master.tenant_crm_port' => '8000',
         ]);
 
         $this->assertFalse(TenantUrl::usesPortInUrls());
         $this->assertSame(
-            'http://inrationeutseddo.guaranteeadmit.com',
+            'http://inrationeutseddo.main.guaranteeadmit.com',
             TenantUrl::urlForSlug('inrationeutseddo')
         );
     }
@@ -75,13 +116,13 @@ class TenantUrlTest extends TestCase
     {
         config([
             'master.is_local' => true,
-            'master.tenant_base_domain' => 'guaranteeadmit.com',
+            'master.tenant_base_domain' => 'main.guaranteeadmit.com',
             'master.tenant_crm_port' => '8000',
         ]);
 
         $this->assertSame(
-            'http://inrationeutseddo.guaranteeadmit.com',
-            TenantUrl::urlForHost('inrationeutseddo.guaranteeadmit.com/')
+            'http://inrationeutseddo.main.guaranteeadmit.com',
+            TenantUrl::urlForHost('inrationeutseddo.main.guaranteeadmit.com/')
         );
     }
 

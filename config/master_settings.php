@@ -38,7 +38,7 @@ return [
             'label' => 'Tenant base domain (production)',
             'config' => 'tenant_base_domain_production',
             'type' => 'string',
-            'hint' => 'e.g. guaranteeadmit.com',
+            'hint' => 'e.g. main.guaranteeadmit.com (Laravel CRM apex; tenants are {slug}.main.guaranteeadmit.com)',
         ],
         'tenant_url_scheme' => [
             'section' => 'urls',
@@ -78,7 +78,7 @@ return [
             'label' => 'Platform default tenant slug',
             'config' => 'platform_default_slug',
             'type' => 'string',
-            'hint' => 'Apex CRM tenant slug (e.g. guaranteeadmit)',
+            'hint' => 'Apex CRM tenant slug (lives at TENANT_BASE_DOMAIN, e.g. main.guaranteeadmit.com)',
         ],
 
         'custom_domain_server_ip' => [

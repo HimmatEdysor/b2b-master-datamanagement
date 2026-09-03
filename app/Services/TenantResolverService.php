@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Tenant;
 use App\Models\TenantDomain;
+use App\Support\TenantSlug;
 use App\Support\TenantUrl;
 use Illuminate\Support\Str;
 
@@ -26,7 +27,24 @@ class TenantResolverService
             return $domain->tenant;
         }
 
+        if (TenantUrl::isApexHost($host)) {
+            return $this->resolvePlatformDefaultTenant();
+        }
+
         return $this->resolveBySubdomainSlug($host);
+    }
+
+    protected function resolvePlatformDefaultTenant(): ?Tenant
+    {
+        $slug = TenantUrl::platformDefaultSlug();
+        if ($slug === '') {
+            return null;
+        }
+
+        return Tenant::query()
+            ->where('slug', $slug)
+            ->with('subscriptionPlan')
+            ->first();
     }
 
     protected function resolveBySubdomainSlug(string $host): ?Tenant
@@ -40,6 +58,10 @@ class TenantResolverService
         $slug = Str::before($host, '.'.$base);
 
         if ($slug === '' || str_contains($slug, '.')) {
+            return null;
+        }
+
+        if (in_array($slug, TenantSlug::reserved(), true) && ! TenantUrl::isPlatformDefaultSlug($slug)) {
             return null;
         }
 
@@ -63,7 +85,8 @@ class TenantResolverService
         foreach ($tenant->domains as $domain) {
             cache()->forget('tenant:host:'.$this->normalizeHost($domain->host));
         }
-        cache()->forget('tenant:host:'.$this->normalizeHost($tenant->slug.'.'.config('master.tenant_base_domain')));
+        cache()->forget('tenant:host:'.$this->normalizeHost(TenantUrl::subdomainHost($tenant->slug)));
+        cache()->forget('tenant:host:'.$this->normalizeHost(TenantUrl::baseDomain()));
     }
 
     public function toApiPayload(Tenant $tenant): array

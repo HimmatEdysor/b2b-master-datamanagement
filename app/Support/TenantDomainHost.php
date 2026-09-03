@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Tenant;
+use Illuminate\Contracts\Validation\ValidationRule;
 
 class TenantDomainHost
 {
@@ -33,7 +34,7 @@ class TenantDomainHost
     /**
      * Optional custom domain on company create/edit/register (leave empty to skip).
      *
-     * @return list<string|\Illuminate\Contracts\Validation\ValidationRule>
+     * @return list<string|ValidationRule>
      */
     public static function optionalCustomDomainRules(): array
     {
@@ -43,7 +44,7 @@ class TenantDomainHost
     /**
      * Required hostname when adding via Domains UI form.
      *
-     * @return list<string|\Illuminate\Contracts\Validation\ValidationRule>
+     * @return list<string|ValidationRule>
      */
     public static function requiredCustomDomainRules(): array
     {
@@ -56,6 +57,23 @@ class TenantDomainHost
         $base = TenantUrl::baseDomain();
 
         return $host === $base || $host === 'www.'.$base;
+    }
+
+    /**
+     * Cloudflare / Route53 zone (guaranteeadmit.com), not the Laravel CRM apex
+     * (main.guaranteeadmit.com).
+     */
+    public static function registrableDomainFromCrmBase(?string $crmBase = null): string
+    {
+        $prod = self::normalize(
+            $crmBase ?? (string) config('master.tenant_base_domain_production', 'main.guaranteeadmit.com')
+        );
+
+        if (str_starts_with($prod, 'main.')) {
+            return substr($prod, strlen('main.'));
+        }
+
+        return $prod !== '' ? $prod : 'guaranteeadmit.com';
     }
 
     /**

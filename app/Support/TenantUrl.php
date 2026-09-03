@@ -73,9 +73,53 @@ class TenantUrl
     public static function baseDomainIsProduction(): bool
     {
         $base = static::baseDomain();
-        $prod = (string) config('master.tenant_base_domain_production', 'guaranteeadmit.com');
+        $prod = (string) config('master.tenant_base_domain_production', 'main.guaranteeadmit.com');
 
-        return $base === $prod || str_ends_with($base, '.'.$prod);
+        return $base === $prod
+            || ($prod !== '' && str_ends_with($base, '.'.$prod))
+            || ($base !== '' && str_ends_with($prod, '.'.$base));
+    }
+
+    public static function platformDefaultSlug(): string
+    {
+        return strtolower(trim((string) config('master.platform_default_slug', 'guaranteeadmit')));
+    }
+
+    public static function isPlatformDefaultSlug(?string $slug): bool
+    {
+        $slug = strtolower(trim((string) $slug));
+        $default = static::platformDefaultSlug();
+
+        return $slug !== '' && $default !== '' && $slug === $default;
+    }
+
+    /**
+     * Laravel CRM apex (and www), including the production base when TENANT_BASE_DOMAIN
+     * is still the old registrable domain (guaranteeadmit.com).
+     */
+    public static function isApexHost(string $host): bool
+    {
+        $host = static::normalizeHost($host);
+        if ($host === '') {
+            return false;
+        }
+
+        $skip = ['localhost', '127.0.0.1', '::1'];
+        $bases = array_unique(array_filter([
+            static::normalizeHost(static::baseDomain()),
+            static::normalizeHost((string) config('master.tenant_base_domain_production', 'main.guaranteeadmit.com')),
+        ]));
+
+        foreach ($bases as $base) {
+            if ($base === '' || in_array($base, $skip, true)) {
+                continue;
+            }
+            if ($host === $base || $host === 'www.'.$base) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Strip slashes, ports, and whitespace from a hostname. */
@@ -94,7 +138,7 @@ class TenantUrl
     public static function subdomainHost(string $slug): string
     {
         $slug = trim($slug);
-        if ($slug === '') {
+        if ($slug === '' || static::isPlatformDefaultSlug($slug)) {
             return static::baseDomain();
         }
 

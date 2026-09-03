@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class TenantSlug
 {
@@ -39,7 +40,43 @@ class TenantSlug
         return $slug !== null && $slug !== '' && (bool) preg_match(static::REGEX, $slug);
     }
 
-    /** @return array<int, string> */
+    /**
+     * Infrastructure labels that must not become {slug}.TENANT_BASE_DOMAIN.
+     *
+     * @return list<string>
+     */
+    public static function reserved(): array
+    {
+        $reserved = config('master.reserved_tenant_slugs', [
+            'main', 'www', 'master', 'api', 'next', 'mail',
+        ]);
+
+        if (! is_array($reserved)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn ($value) => strtolower(trim((string) $value)),
+            $reserved
+        ))));
+    }
+
+    /**
+     * Reserved labels excluding the platform default slug (that company uses the apex).
+     *
+     * @return list<string>
+     */
+    public static function reservedForNewCompanies(): array
+    {
+        $default = TenantUrl::platformDefaultSlug();
+
+        return array_values(array_filter(
+            static::reserved(),
+            static fn (string $slug) => $slug !== $default
+        ));
+    }
+
+    /** @return array<int, mixed> */
     public static function validationRules(bool $uniqueTenants = true, ?int $ignoreTenantId = null): array
     {
         $rules = [
@@ -48,6 +85,11 @@ class TenantSlug
             'max:64',
             'regex:'.static::REGEX,
         ];
+
+        $reserved = static::reservedForNewCompanies();
+        if ($reserved !== []) {
+            $rules[] = Rule::notIn($reserved);
+        }
 
         if ($uniqueTenants) {
             $rules[] = 'unique:tenants,slug'.($ignoreTenantId ? ','.$ignoreTenantId : '');

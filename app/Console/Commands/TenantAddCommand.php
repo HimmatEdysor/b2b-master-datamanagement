@@ -45,12 +45,13 @@ class TenantAddCommand extends Command
             'subscription_status' => 'active',
         ]);
 
-        $subdomain = $slug.'.'.$base;
+        $subdomain = TenantUrl::subdomainHost($slug);
+        $isApex = $subdomain === $base;
 
         TenantDomain::create([
             'tenant_id' => $tenant->id,
             'host' => $subdomain,
-            'type' => 'subdomain',
+            'type' => $isApex ? 'primary' : 'subdomain',
             'is_primary' => true,
         ]);
 

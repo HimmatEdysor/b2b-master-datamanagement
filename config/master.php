@@ -14,9 +14,22 @@ return [
 
     /*
     | Slug for the default platform tenant (Laravel apex main.guaranteeadmit.com).
+    | That company uses the base host itself — not {slug}.main.guaranteeadmit.com.
     | Next.js portal apex remains guaranteeadmit.com / {slug}.guaranteeadmit.com.
     */
     'platform_default_slug' => env('PLATFORM_DEFAULT_TENANT_SLUG', 'guaranteeadmit'),
+
+    /*
+    | Labels that cannot be company slugs. "main" is the CRM apex label
+    | (main.guaranteeadmit.com), not a tenant.
+    */
+    'reserved_tenant_slugs' => array_values(array_filter(array_map(
+        'strtolower',
+        array_map('trim', explode(',', env(
+            'RESERVED_TENANT_SLUGS',
+            'main,www,master,pro-master,api,next,mail,smtp,ftp,admin,portal'
+        )))
+    ))),
 
     'tenant_url_scheme' => env('TENANT_URL_SCHEME') ?: (
         env('APP_ENV') === 'local' ? 'http' : 'https'

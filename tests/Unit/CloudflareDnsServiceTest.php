@@ -48,6 +48,7 @@ class CloudflareDnsServiceTest extends TestCase
         $service = app(CloudflareDnsService::class);
 
         $this->assertSame('apple', $service->recordNameForApi('apple.guaranteeadmit.com'));
+        $this->assertSame('newcompany.main', $service->recordNameForApi('newcompany.main.guaranteeadmit.com'));
         $this->assertSame('guaranteeadmit.com', $service->recordNameForApi('guaranteeadmit.com'));
     }
 

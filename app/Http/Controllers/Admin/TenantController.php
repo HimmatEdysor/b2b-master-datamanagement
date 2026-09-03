@@ -9,23 +9,27 @@ use App\Models\Tenant;
 use App\Models\TenantDomain;
 use App\Models\TenantSubdomainCheckStat;
 use App\Services\MasterActivityLogService;
-use App\Services\TenantCrmMigrateService;
-use App\Services\TenantDomainService;
+use App\Services\ProvisionTenantQueueService;
 use App\Services\TenantAccessService;
+use App\Services\TenantCrmMigrateService;
 use App\Services\TenantDatabaseUserService;
 use App\Services\TenantDefaultUserService;
+use App\Services\TenantDomainDnsService;
+use App\Services\TenantDomainService;
 use App\Services\TenantProvisionerService;
 use App\Services\TenantResolverService;
 use App\Services\TenantSubscriptionService;
-use Carbon\Carbon;
+use App\Support\TenantDbAdmin;
 use App\Support\TenantDomainHost;
 use App\Support\TenantSlug;
 use App\Support\TenantUrl;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class TenantController extends Controller
@@ -172,7 +176,7 @@ class TenantController extends Controller
 
     public function provisioning(Tenant $tenant): View|RedirectResponse
     {
-        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $provisionQueue = app(ProvisionTenantQueueService::class);
 
         if ($tenant->status === 'active' && $tenant->provisioning_stage === 'completed') {
             return redirect()
@@ -195,21 +199,21 @@ class TenantController extends Controller
 
     public function show(Tenant $tenant): View
     {
-      
+
         $tenant->load([
             'domains',
             'subscriptionPlan',
             'approver',
             'operationLogs' => fn ($q) => $q->with('user')->latest()->limit(20),
         ]);
-       
+
         $crmHost = TenantUrl::hostForTenant($tenant);
         $crmFullUrl = TenantUrl::urlForTenant($tenant);
         $resolveUrl = $tenant->isActive() && $crmHost
             ? url('/api/v1/tenant/resolve?host='.$crmHost)
             : null;
 
-        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $provisionQueue = app(ProvisionTenantQueueService::class);
         $activelyProvisioning = $provisionQueue->isActivelyProvisioning($tenant);
 
         $subdomainCheckStats = $activelyProvisioning
@@ -263,7 +267,7 @@ class TenantController extends Controller
             session()->flash('success', 'Provisioning completed. Database and CRM credentials are ready.');
         }
 
-        $dnsService = app(\App\Services\TenantDomainDnsService::class);
+        $dnsService = app(TenantDomainDnsService::class);
         // DNS linking runs on approve / manual "Update DNS" — not on every page view (Cloudflare API is slow).
         $dnsAutoResults = [];
         $dnsPendingDomains = $tenant->domains->filter(
@@ -273,7 +277,7 @@ class TenantController extends Controller
         $dnsAutoFail = collect($dnsAutoResults)->where('verified', false);
         $domainActivityLog = $activelyProvisioning
             ? []
-            : app(\App\Services\MasterActivityLogService::class)->recentForTenant($tenant->id);
+            : app(MasterActivityLogService::class)->recentForTenant($tenant->id);
 
         return view('admin.tenants.show', compact(
             'tenant',
@@ -328,7 +332,7 @@ class TenantController extends Controller
 
     public function edit(Tenant $tenant): View
     {
-       
+
         $plans = SubscriptionPlan::query()->where('is_active', true)->orderBy('name')->get();
         $tenant->load('domains');
 
@@ -360,7 +364,7 @@ class TenantController extends Controller
             if (! $tenant->domains()->where('host', $host)->exists()) {
                 try {
                     $this->domainService->addCustomDomain($tenant, $host);
-                } catch (\Illuminate\Validation\ValidationException) {
+                } catch (ValidationException) {
                     return back()
                         ->withInput()
                         ->withErrors(['custom_domain' => 'Could not add custom domain. It may already be in use.']);
@@ -486,7 +490,7 @@ class TenantController extends Controller
 
         try {
             if ($runSync) {
-                app(\App\Services\ProvisionTenantQueueService::class)->prepareFreshDispatch($tenant->id);
+                app(ProvisionTenantQueueService::class)->prepareFreshDispatch($tenant->id);
 
                 $result = $this->provisioner->approve($tenant->fresh(), Auth::user());
 
@@ -509,9 +513,9 @@ class TenantController extends Controller
             ->with('success', 'Provisioning queued. Live progress below.');
     }
 
-    public function provisioningStatus(Tenant $tenant): \Illuminate\Http\JsonResponse
+    public function provisioningStatus(Tenant $tenant): JsonResponse
     {
-        $provisionQueue = app(\App\Services\ProvisionTenantQueueService::class);
+        $provisionQueue = app(ProvisionTenantQueueService::class);
         $tenant->refresh();
 
         if ($provisionQueue->isActivelyProvisioning($tenant)) {
@@ -651,7 +655,7 @@ class TenantController extends Controller
     /**
      * JSON list of companies + domains for progressive migrate UI (re-fetch when new companies exist).
      */
-    public function migrationQueue(Request $request): \Illuminate\Http\JsonResponse
+    public function migrationQueue(Request $request): JsonResponse
     {
         $slug = $request->query('slug');
         $slug = is_string($slug) ? trim($slug) : null;
@@ -671,7 +675,7 @@ class TenantController extends Controller
     /**
      * Run B2B CRM migrate on one company database (master triggers CRM artisan subprocess).
      */
-    public function migrateDatabase(Request $request, Tenant $tenant): \Illuminate\Http\JsonResponse
+    public function migrateDatabase(Request $request, Tenant $tenant): JsonResponse
     {
         if (! config('master.tenant_crm_path')) {
             return response()->json([
@@ -713,8 +717,8 @@ class TenantController extends Controller
 
         if (! $tenant->fresh()->database_host) {
             $tenant->update([
-                'database_host' => \App\Support\TenantDbAdmin::host(),
-                'database_port' => \App\Support\TenantDbAdmin::port(),
+                'database_host' => TenantDbAdmin::host(),
+                'database_port' => TenantDbAdmin::port(),
             ]);
         }
 
@@ -891,6 +895,7 @@ class TenantController extends Controller
             'slug.required' => 'Subdomain is required.',
             'slug.regex' => 'Subdomain can only contain lowercase letters, numbers, and hyphens — no spaces (e.g. data not "data test").',
             'slug.unique' => 'This subdomain is already taken.',
+            'slug.not_in' => 'This subdomain is reserved. Partner companies use {slug}.'.TenantUrl::baseDomain().' — "main" is the CRM apex, not a company slug.',
             ...$this->logoValidationMessages(),
         ]);
     }

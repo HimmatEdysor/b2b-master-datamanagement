@@ -10,8 +10,8 @@ use App\Services\MasterActivityLogService;
 use App\Services\TenantProvisionerService;
 use App\Support\TenantDbAdmin;
 use App\Support\TenantDomainHost;
-use App\Support\TenantUrl;
 use App\Support\TenantSlug;
+use App\Support\TenantUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -79,6 +79,7 @@ class CompanyRegistrationController extends Controller
             'slug.required' => 'Subdomain is required.',
             'slug.regex' => 'Subdomain can only contain lowercase letters, numbers, and hyphens — no spaces (e.g. data not "data test").',
             'slug.unique' => 'This subdomain is already taken. Choose another.',
+            'slug.not_in' => 'This subdomain is reserved. Use a company slug under '.TenantUrl::baseDomain().' (not "main").',
             'custom_domain.regex' => 'Enter a valid hostname (e.g. crm.example.com) without http://. Leave blank if not needed.',
             ...$this->logoValidationMessages(),
         ]);

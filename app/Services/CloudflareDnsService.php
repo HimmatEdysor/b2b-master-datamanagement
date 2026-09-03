@@ -120,9 +120,7 @@ class CloudflareDnsService
             return TenantDomainHost::normalize($base);
         }
 
-        return TenantDomainHost::normalize(
-            (string) config('master.tenant_base_domain_production', 'guaranteeadmit.com')
-        );
+        return TenantDomainHost::registrableDomainFromCrmBase();
     }
 
     /**
